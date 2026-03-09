@@ -1,0 +1,56 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "~/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.d.ts",
+    "**/*.mjs",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "app/_nodes/node-*/**",
+    "app/_nodes/templates/**",
+    "app/_nodes/pipeline/**",
+    "app/_nodes/lib/**",
+    "app/_nodes/route-data/**",
+    "app/_nodes/product-card.tsx",
+    "app/_nodes/signin.tsx",
+    "app/_nodes/instagram.tsx",
+    "app/_nodes/components.ts",
+    "app/_nodes/dynamic-config.ts",
+    "app/_nodes/observability.ts",
+    "app/_nodes/dynamic-grid copy.tsx"
+  ]
+}

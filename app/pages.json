@@ -1,0 +1,1456 @@
+{
+  "presets": {
+    "/": {
+      "name": "Inicio",
+      "description": "Preset base para /dynamic",
+      "slug": "",
+      "items": [
+        {
+          "i": "home-header-nav",
+          "type": "node-header-nav",
+          "position": {
+            "xs": {
+              "x": 0,
+              "y": 0,
+              "w": 5,
+              "h": 8
+            },
+            "sm": {
+              "x": 0,
+              "y": 0,
+              "w": 5,
+              "h": 8
+            },
+            "lg": {
+              "x": 0,
+              "y": 0,
+              "w": 5,
+              "h": 8
+            }
+          }
+        },
+        {
+          "i": "home-hero-header",
+          "type": "node-hero-header",
+          "props": {
+            "fixed": true,
+            "data": {
+              "NOME": "HUB.STUDIO",
+              "SUBTITULO": "Visual runtime rebuild",
+              "SIGLA": "HS"
+            }
+          },
+          "position": {
+            "xs": {
+              "x": 0,
+              "y": 8,
+              "w": 5,
+              "h": 8
+            },
+            "sm": {
+              "x": 0,
+              "y": 8,
+              "w": 5,
+              "h": 8
+            },
+            "lg": {
+              "x": 0,
+              "y": 8,
+              "w": 5,
+              "h": 8
+            }
+          }
+        },
+        {
+          "i": "home-signin",
+          "type": "node-signin",
+          "props": {},
+          "position": {
+            "xs": {
+              "x": 0,
+              "y": 16,
+              "w": 2,
+              "h": 12
+            },
+            "sm": {
+              "x": 0,
+              "y": 16,
+              "w": 2,
+              "h": 12
+            },
+            "lg": {
+              "x": 0,
+              "y": 16,
+              "w": 2,
+              "h": 12
+            }
+          }
+        },
+        {
+          "i": "home-quick-course",
+          "type": "node-quick-course-card",
+          "props": {},
+          "position": {
+            "xs": {
+              "x": 2,
+              "y": 16,
+              "w": 3,
+              "h": 8
+            },
+            "sm": {
+              "x": 2,
+              "y": 16,
+              "w": 3,
+              "h": 8
+            },
+            "lg": {
+              "x": 2,
+              "y": 16,
+              "w": 3,
+              "h": 8
+            }
+          }
+        },
+        {
+          "i": "home-footer",
+          "type": "node-footer",
+          "position": {
+            "xs": {
+              "x": 0,
+              "y": 28,
+              "w": 5,
+              "h": 10
+            },
+            "sm": {
+              "x": 0,
+              "y": 28,
+              "w": 5,
+              "h": 10
+            },
+            "lg": {
+              "x": 0,
+              "y": 28,
+              "w": 5,
+              "h": 10
+            }
+          }
+        }
+      ]
+    },
+    "dashboard": {
+      "name": "Dashboard",
+      "description": "Visao geral da conta",
+      "slug": "dashboard",
+      "requiresAuth": true,
+      "items": [
+        {
+          "i": "academic-mode-1772568134695",
+          "type": "academic-mode",
+          "props": {},
+          "position": {
+            "xs": {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 9
+            },
+            "sm": {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 9
+            },
+            "lg": {
+              "x": 0,
+              "y": 0,
+              "w": 1,
+              "h": 9
+            }
+          }
+        },
+        {
+          "i": "discord",
+          "type": "node-discord-node",
+          "props": {},
+          "position": {
+            "xs": {
+              "x": 1,
+              "y": 0,
+              "w": 1,
+              "h": 4
+            },
+            "sm": {
+              "x": 1,
+              "y": 0,
+              "w": 1,
+              "h": 4
+            },
+            "lg": {
+              "x": 1,
+              "y": 0,
+              "w": 1,
+              "h": 4
+            }
+          }
+        },
+        {
+          "i": "profile-summary",
+          "type": "profile-summary",
+          "position": {
+            "xs": {
+              "x": 2,
+              "y": 0,
+              "w": 2,
+              "h": 6
+            },
+            "sm": {
+              "x": 2,
+              "y": 0,
+              "w": 2,
+              "h": 6
+            },
+            "lg": {
+              "x": 2,
+              "y": 0,
+              "w": 2,
+              "h": 6
+            }
+          }
+        },
+        {
+          "i": "flame-balance",
+          "type": "flame-balance",
+          "position": {
+            "xs": {
+              "x": 1,
+              "y": 4,
+              "w": 1,
+              "h": 2
+            },
+            "sm": {
+              "x": 1,
+              "y": 4,
+              "w": 1,
+              "h": 2
+            },
+            "lg": {
+              "x": 1,
+              "y": 4,
+              "w": 1,
+              "h": 2
+            }
+          }
+        },
+        {
+          "i": "dashboard-pendentes",
+          "type": "pendentes-table",
+          "position": {
+            "xs": {
+              "x": 0,
+              "y": 9,
+              "w": 3,
+              "h": 8
+            },
+            "sm": {
+              "x": 0,
+              "y": 9,
+              "w": 3,
+              "h": 8
+            },
+            "lg": {
+              "x": 0,
+              "y": 9,
+              "w": 3,
+              "h": 8
+            }
+          }
+        }
+      ],
+      "children": {
+        "transacoes": {
+          "name": "Transacoes",
+          "description": "Foco no historico de transacoes",
+          "slug": "dashboard/transacoes",
+          "requiresAuth": true,
+          "items": [
+            {
+              "i": "transacoes-pendentes",
+              "type": "pendentes-table",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 3,
+                  "h": 6
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 3,
+                  "h": 6
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 3,
+                  "h": 6
+                }
+              }
+            },
+            {
+              "i": "transacoes-table",
+              "type": "transacoes-table",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 5,
+                  "h": 10
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 5,
+                  "h": 10
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 5,
+                  "h": 10
+                }
+              }
+            }
+          ]
+        },
+        "frequencia": {
+          "name": "Frequencia",
+          "description": "Foco no historico de frequencia",
+          "slug": "dashboard/frequencia",
+          "requiresAuth": true,
+          "items": [
+            {
+              "i": "frequencia-table",
+              "type": "frequencia-table",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 6,
+                  "w": 5,
+                  "h": 14
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 6,
+                  "w": 5,
+                  "h": 14
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 6,
+                  "w": 5,
+                  "h": 14
+                }
+              }
+            }
+          ]
+        },
+        "flames": {
+          "name": "Flames",
+          "description": "Foco em movimentacoes de flames",
+          "slug": "dashboard/flames",
+          "requiresAuth": true,
+          "items": [
+            {
+              "i": "flames-table",
+              "type": "flames-table",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 6,
+                  "w": 3,
+                  "h": 14
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 6,
+                  "w": 3,
+                  "h": 14
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 6,
+                  "w": 3,
+                  "h": 14
+                }
+              }
+            },
+            {
+              "i": "flames-discord",
+              "type": "discord-community",
+              "position": {
+                "xs": {
+                  "x": 3,
+                  "y": 6,
+                  "w": 2,
+                  "h": 14
+                },
+                "sm": {
+                  "x": 3,
+                  "y": 6,
+                  "w": 2,
+                  "h": 14
+                },
+                "lg": {
+                  "x": 3,
+                  "y": 6,
+                  "w": 2,
+                  "h": 14
+                }
+              }
+            },
+            {
+              "i": "flames-backpack",
+              "type": "backpack",
+              "position": {
+                "xs": {
+                  "x": 3,
+                  "y": 20,
+                  "w": 2,
+                  "h": 10
+                },
+                "sm": {
+                  "x": 3,
+                  "y": 20,
+                  "w": 2,
+                  "h": 10
+                },
+                "lg": {
+                  "x": 3,
+                  "y": 20,
+                  "w": 2,
+                  "h": 10
+                }
+              }
+            }
+          ],
+          "children": {
+            "extrato": {
+              "name": "Flames Extrato",
+              "description": "Preset filho oculto para extrato detalhado",
+              "slug": "dashboard/flames/extrato",
+              "hidden": true,
+              "requiresAuth": true,
+              "items": [
+                {
+                  "i": "flames-extrato-main",
+                  "type": "flames-table",
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 16
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 16
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 16
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "ferramentas": {
+      "name": "Ferramentas",
+      "description": "Ferramentas criativas e produtivas",
+      "slug": "ferramentas",
+      "requiresAuth": false,
+      "items": [],
+      "children": {
+        "adobe-pass": {
+          "name": "Adobe Pass",
+          "description": "Foco no historico de transacoes",
+          "slug": "ferramentas/adobe-pass",
+          "items": [
+            {
+              "i": "transacoes-pendentes",
+              "type": "pendentes-table",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 3,
+                  "h": 6
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 3,
+                  "h": 6
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 3,
+                  "h": 6
+                }
+              }
+            },
+            {
+              "i": "transacoes-table",
+              "type": "transacoes-table",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 5,
+                  "h": 10
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 5,
+                  "h": 10
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 5,
+                  "h": 10
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "site": {
+      "name": "Site",
+      "description": "Rotas públicas migradas para dynamic nodes",
+      "slug": "site",
+      "items": [],
+      "children": {
+        "institucional": {
+          "name": "Institucional",
+          "description": "Páginas institucionais e utilitárias",
+          "slug": "site/institucional",
+          "items": [
+            {
+              "i": "site-institucional-shell",
+              "type": "route-shell",
+              "props": {
+                "title": "Institucional",
+                "description": "Acesse páginas utilitárias públicas no runtime de nodes.",
+                "routePath": "/privacidade",
+                "section": "bucket-a"
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ],
+          "children": {
+            "privacidade": {
+              "name": "Privacidade",
+              "description": "Política de privacidade",
+              "slug": "site/institucional/privacidade",
+              "items": [
+                {
+                  "i": "route-privacidade",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "Privacidade",
+                    "description": "Página institucional migrada para node runtime.",
+                    "routePath": "/privacidade",
+                    "section": "bucket-a"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            },
+            "contrato": {
+              "name": "Contrato",
+              "description": "Termos e contrato",
+              "slug": "site/institucional/contrato",
+              "items": [
+                {
+                  "i": "route-contrato",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "Contrato",
+                    "description": "Página institucional migrada para node runtime.",
+                    "routePath": "/contrato",
+                    "section": "bucket-a"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            },
+            "status": {
+              "name": "Status",
+              "description": "Status da plataforma",
+              "slug": "site/institucional/status",
+              "items": [
+                {
+                  "i": "route-status",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "Status",
+                    "description": "Página de status migrada para node runtime.",
+                    "routePath": "/status",
+                    "section": "bucket-a"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            },
+            "faq": {
+              "name": "FAQ",
+              "description": "Perguntas frequentes",
+              "slug": "site/institucional/faq",
+              "items": [
+                {
+                  "i": "route-faq",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "FAQ",
+                    "description": "FAQ pública no runtime de nodes.",
+                    "routePath": "/FAQ",
+                    "section": "bucket-a"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "eventos": {
+          "name": "Eventos e LPs",
+          "description": "Campanhas e landing pages",
+          "slug": "site/eventos",
+          "items": [
+            {
+              "i": "route-eventos-home",
+              "type": "route-shell",
+              "props": {
+                "title": "Eventos e LPs",
+                "description": "Conjunto de slugs públicos migrados por bucket A.",
+                "routePath": "/eventos/neville-page-25",
+                "section": "bucket-a"
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ],
+          "children": {
+            "neville-page-25": {
+              "name": "Neville 25",
+              "description": "Evento principal",
+              "slug": "site/eventos/neville-page-25",
+              "items": [
+                {
+                  "i": "route-neville-25",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "Evento Neville 25",
+                    "routePath": "/eventos/neville-page-25",
+                    "section": "bucket-a"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            },
+            "novo-mundo": {
+              "name": "Novo Mundo",
+              "description": "Evento Novo Mundo",
+              "slug": "site/eventos/novo-mundo",
+              "items": [
+                {
+                  "i": "route-novo-mundo",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "Evento Novo Mundo",
+                    "routePath": "/eventos/novo-mundo",
+                    "section": "bucket-a"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            },
+            "lp-neville-exp": {
+              "name": "LP Neville EXP",
+              "description": "Landing page",
+              "slug": "site/eventos/lp-neville-exp",
+              "items": [
+                {
+                  "i": "route-lp-nevexp",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "LP Neville EXP",
+                    "routePath": "/lp/neville-exp",
+                    "section": "bucket-a"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "comunidade": {
+          "name": "Comunidade",
+          "description": "Rotas públicas dinâmicas de comunidade",
+          "slug": "site/comunidade",
+          "items": [
+            {
+              "i": "route-forum",
+              "type": "route-shell",
+              "props": {
+                "title": "Forum",
+                "description": "Bucket B: comunidade e interação.",
+                "routePath": "/forum",
+                "section": "bucket-b"
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ],
+          "children": {
+            "room": {
+              "name": "Room",
+              "description": "Sala de reunião",
+              "slug": "site/comunidade/room",
+              "items": [
+                {
+                  "i": "route-room",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "Room",
+                    "routePath": "/room",
+                    "section": "bucket-b"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            },
+            "nexus": {
+              "name": "Nexus",
+              "description": "Nexus dashboard",
+              "slug": "site/comunidade/nexus",
+              "items": [
+                {
+                  "i": "route-nexus",
+                  "type": "route-shell",
+                  "props": {
+                    "title": "Nexus",
+                    "routePath": "/nexus",
+                    "section": "bucket-b"
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 8
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "modulos": {
+          "name": "Biblioteca de Modulos",
+          "description": "Modulos reais das paginas convertidos para nodes",
+          "slug": "site/modulos",
+          "items": [
+            {
+              "i": "mod-header",
+              "type": "node-header-nav",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            },
+            {
+              "i": "mod-signin",
+              "type": "node-signin",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 2,
+                  "h": 10
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 2,
+                  "h": 10
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 8,
+                  "w": 2,
+                  "h": 10
+                }
+              }
+            },
+            {
+              "i": "mod-react-text",
+              "type": "node-react-text",
+              "props": {
+                "mini": true,
+                "height": "220px",
+                "value": "<p>Editor de texto em node.</p>"
+              },
+              "position": {
+                "xs": {
+                  "x": 2,
+                  "y": 8,
+                  "w": 3,
+                  "h": 10
+                },
+                "sm": {
+                  "x": 2,
+                  "y": 8,
+                  "w": 3,
+                  "h": 10
+                },
+                "lg": {
+                  "x": 2,
+                  "y": 8,
+                  "w": 3,
+                  "h": 10
+                }
+              }
+            },
+            {
+              "i": "mod-hero",
+              "type": "node-hero-header",
+              "props": {
+                "fixed": true,
+                "data": {
+                  "NOME": "Demo Hero",
+                  "SUBTITULO": "Modulo legado convertido para node",
+                  "SIGLA": "AS"
+                }
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 18,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 18,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 18,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            },
+            {
+              "i": "mod-footer",
+              "type": "node-footer",
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 26,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 26,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 26,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ],
+          "children": {
+            "curso": {
+              "name": "Modulo Curso",
+              "description": "Node para Video_module (curso)",
+              "slug": "site/modulos/curso",
+              "internalRoute": true,
+              "indexable": false,
+              "items": [
+                {
+                  "i": "mod-video-curso",
+                  "type": "node-video-module-curso",
+                  "props": {
+                    "curso": {
+                      "NOME": "Curso Demo",
+                      "MODULOS": []
+                    },
+                    "steps": []
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 10
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 10
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 10
+                    }
+                  }
+                }
+              ]
+            },
+            "trilha": {
+              "name": "Modulo Trilha",
+              "description": "Node para Video_module (trilha)",
+              "slug": "site/modulos/trilha",
+              "internalRoute": true,
+              "indexable": false,
+              "items": [
+                {
+                  "i": "mod-video-trilha",
+                  "type": "node-video-module-trilha",
+                  "props": {
+                    "curso": {
+                      "NOME": "Trilha Demo",
+                      "MODULOS": []
+                    },
+                    "steps": []
+                  },
+                  "position": {
+                    "xs": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 10
+                    },
+                    "sm": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 10
+                    },
+                    "lg": {
+                      "x": 0,
+                      "y": 0,
+                      "w": 5,
+                      "h": 10
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "learning": {
+      "name": "Aprendizado",
+      "description": "Catch-all de curso/trilha/sala no runtime dinâmico",
+      "slug": "learning",
+      "indexable": false,
+      "items": [
+        {
+          "i": "route-learning",
+          "type": "route-shell",
+          "props": {
+            "title": "Aprendizado",
+            "description": "Bucket C/D: slugs com contratos dinâmicos e dados compartilhados.",
+            "routePath": "/curso/current",
+            "section": "bucket-c"
+          },
+          "position": {
+            "xs": {
+              "x": 0,
+              "y": 0,
+              "w": 5,
+              "h": 8
+            },
+            "sm": {
+              "x": 0,
+              "y": 0,
+              "w": 5,
+              "h": 8
+            },
+            "lg": {
+              "x": 0,
+              "y": 0,
+              "w": 5,
+              "h": 8
+            }
+          }
+        }
+      ],
+      "children": {
+        "curso": {
+          "name": "Curso",
+          "description": "Rota catch-all de curso",
+          "slug": "learning/curso",
+          "internalRoute": true,
+          "indexable": false,
+          "items": [
+            {
+              "i": "route-learning-curso",
+              "type": "route-shell",
+              "props": {
+                "title": "Curso Catch-all",
+                "description": "Compatível com /curso/[...info] + parent data boundary.",
+                "routePath": "/curso/AS/current",
+                "section": "bucket-c",
+                "internal": true
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ]
+        },
+        "trilha": {
+          "name": "Trilha",
+          "description": "Rota catch-all de trilha",
+          "slug": "learning/trilha",
+          "internalRoute": true,
+          "indexable": false,
+          "items": [
+            {
+              "i": "route-learning-trilha",
+              "type": "route-shell",
+              "props": {
+                "title": "Trilha Catch-all",
+                "description": "Compatível com /trilha/[...info] + parent data boundary.",
+                "routePath": "/trilha/AS/current",
+                "section": "bucket-c",
+                "internal": true
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ]
+        },
+        "sala": {
+          "name": "Sala",
+          "description": "Rota protegida de sala de aula",
+          "slug": "learning/sala",
+          "requiresAuth": true,
+          "internalRoute": true,
+          "indexable": false,
+          "items": [
+            {
+              "i": "route-learning-sala",
+              "type": "route-shell",
+              "props": {
+                "title": "Sala Catch-all",
+                "description": "Compatível com /sala/[...idturma], com auth server-side.",
+                "routePath": "/sala/1",
+                "section": "bucket-d",
+                "internal": true
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ]
+        },
+        "pedido": {
+          "name": "Pedido",
+          "description": "Fluxo de pedido",
+          "slug": "learning/pedido",
+          "internalRoute": true,
+          "indexable": false,
+          "items": [
+            {
+              "i": "route-learning-pedido",
+              "type": "route-shell",
+              "props": {
+                "title": "Pedido Catch-all",
+                "description": "Compatível com /pedido/[...pedidoid].",
+                "routePath": "/pedido/1",
+                "section": "bucket-c",
+                "internal": true
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ]
+        },
+        "pagamento": {
+          "name": "Pagamento",
+          "description": "Fluxo de pagamento",
+          "slug": "learning/pagamento",
+          "internalRoute": true,
+          "indexable": false,
+          "items": [
+            {
+              "i": "route-learning-pagamento",
+              "type": "route-shell",
+              "props": {
+                "title": "Pagamento Catch-all",
+                "description": "Compatível com /pagamento/[...pid].",
+                "routePath": "/pagamento/1",
+                "section": "bucket-c",
+                "internal": true
+              },
+              "position": {
+                "xs": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "sm": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                },
+                "lg": {
+                  "x": 0,
+                  "y": 0,
+                  "w": 5,
+                  "h": 8
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

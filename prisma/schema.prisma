@@ -1,0 +1,570 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantRole {
+  OWNER
+  ADMIN
+  INSTRUCTOR
+  MEMBER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  PENDING
+  BLOCKED
+}
+
+enum ProductType {
+  COURSE
+  PHYSICAL_PRODUCT
+  DIGITAL_PRODUCT
+  SERVICE
+  CUSTOM
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ProductModuleType {
+  LIBRARY
+  COURSE
+}
+
+enum AssetType {
+  VIDEO
+  PDF
+  FILE
+  IMAGE
+  LINK
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ProductAssetPlacement {
+  PRODUCT_HERO
+  PRODUCT_GALLERY
+  LIBRARY
+  STEP
+}
+
+enum ProductAssetInteractionMode {
+  OPEN
+  DOWNLOAD
+  LINK
+}
+
+enum AssetInteractionType {
+  VIEWED
+  WATCHED
+  DOWNLOADED
+  OPENED
+  CLICKED
+}
+
+enum StepInteractionType {
+  OPENED
+  PROGRESSED
+  COMPLETED
+  DOWNLOADED
+}
+
+model User {
+  id                     String                 @id @default(cuid())
+  name                   String?
+  email                  String?                @unique
+  isGlobalAdmin          Boolean                @default(false)
+  emailVerified          DateTime?
+  image                  String?
+  accounts               Account[]
+  sessions               Session[]
+  createdTenants         Tenant[]               @relation("TenantCreatedBy")
+  memberships            TenantMembership[]
+  invitedMemberships     TenantMembership[]     @relation("TenantInviteCreatedBy")
+  productsCreated        Product[]              @relation("ProductCreatedBy")
+  productProgress        UserProductProgress[]
+  visitorSessions        VisitorSession[]
+  assetInteractions      UserAssetInteraction[]
+  stepInteractions       UserStepInteraction[]
+  interactionEvents      UserInteractionEvent[]
+  sentInvites            TenantInvitation[]     @relation("TenantInvitationCreatedBy")
+  acceptedInvites        TenantInvitation[]     @relation("TenantInvitationAcceptedBy")
+  productAccesses        UserProductAccess[]    @relation("UserProductAccessUser")
+  grantedProductAccesses UserProductAccess[]    @relation("UserProductAccessGrantedBy")
+}
+
+model Tenant {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  isOpen          Boolean  @default(false)
+  settings        Json?
+  createdByUserId String?
+  createdByUser   User?    @relation("TenantCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  memberships        TenantMembership[]
+  sessions           Session[]
+  products           Product[]
+  features           ProductFeature[]
+  steps              ProductStep[]
+  assets             ProductAsset[]
+  progressRecords    UserProductProgress[]
+  visitorSessions    VisitorSession[]
+  assetInteractions  UserAssetInteraction[]
+  stepInteractions   UserStepInteraction[]
+  interactionEvents  UserInteractionEvent[]
+  invitations        TenantInvitation[]
+  nodePages          TenantNodePage[]
+  nodeItems          TenantNodeItem[]
+  productAccesses    UserProductAccess[]
+  moduleCapabilities TenantModuleCapability[]
+  productModules     ProductModuleConfig[]
+}
+
+model TenantNodePage {
+  id             String   @id @default(cuid())
+  tenantId       String
+  parentPageId   String?
+  name           String
+  description    String?
+  slug           String
+  requiresAuth   Boolean  @default(false)
+  editableByUser Boolean  @default(false)
+  internalRoute  Boolean  @default(false)
+  indexable      Boolean  @default(true)
+  hidden         Boolean  @default(false)
+  isSystem       Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parentPage TenantNodePage?  @relation("TenantNodePageTree", fields: [parentPageId], references: [id], onDelete: SetNull)
+  children   TenantNodePage[] @relation("TenantNodePageTree")
+  items      TenantNodeItem[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, parentPageId, sortOrder])
+}
+
+model TenantNodeItem {
+  id        String   @id @default(cuid())
+  tenantId  String
+  pageId    String
+  nodeKey   String
+  type      String
+  title     String?
+  props     Json?
+  position  Json
+  sortOrder Int      @default(0)
+  productId String?
+  stepId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  page    TenantNodePage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  product Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  step    ProductStep?   @relation(fields: [stepId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, pageId, sortOrder])
+  @@index([tenantId, productId])
+  @@index([tenantId, stepId])
+}
+
+model TenantInvitation {
+  id               String           @id @default(cuid())
+  tenantId         String
+  email            String
+  role             TenantRole       @default(MEMBER)
+  status           MembershipStatus @default(PENDING)
+  invitedByUserId  String?
+  acceptedByUserId String?
+  expiresAt        DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  tenant         Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedByUser  User?  @relation("TenantInvitationCreatedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  acceptedByUser User?  @relation("TenantInvitationAcceptedBy", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, email])
+  @@index([tenantId, status, role])
+}
+
+model TenantMembership {
+  id              String           @id @default(cuid())
+  tenantId        String
+  userId          String
+  role            TenantRole       @default(MEMBER)
+  status          MembershipStatus @default(ACTIVE)
+  joinedAt        DateTime         @default(now())
+  invitedByUserId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  tenant        Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invitedByUser User?  @relation("TenantInviteCreatedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, role, status])
+  @@index([userId, status])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id             String   @id @default(cuid())
+  sessionToken   String   @unique
+  userId         String
+  activeTenantId String?
+  expires        DateTime
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeTenant   Tenant?  @relation(fields: [activeTenantId], references: [id], onDelete: SetNull)
+
+  @@index([activeTenantId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Product {
+  id                  String        @id @default(cuid())
+  tenantId            String
+  slug                String?
+  name                String
+  subtitle            String?
+  description         String?
+  type                ProductType   @default(COURSE)
+  status              ProductStatus @default(DRAFT)
+  isVisible           Boolean       @default(true)
+  isFree              Boolean       @default(true)
+  priceCents          Int?
+  currency            String?       @default("USD")
+  galleryOnly         Boolean       @default(false)
+  lockSequentialSteps Boolean       @default(false)
+  metadata            Json?
+  createdByUserId     String?
+  publishedAt         DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdByUser     User?                  @relation("ProductCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  features          ProductFeature[]
+  steps             ProductStep[]
+  assets            ProductAsset[]
+  progressRecords   UserProductProgress[]
+  assetInteractions UserAssetInteraction[]
+  stepInteractions  UserStepInteraction[]
+  interactionEvents UserInteractionEvent[]
+  nodeItems         TenantNodeItem[]
+  userAccesses      UserProductAccess[]
+  moduleConfigs     ProductModuleConfig[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status, isVisible])
+}
+
+model TenantModuleCapability {
+  id         String            @id @default(cuid())
+  tenantId   String
+  moduleType ProductModuleType
+  isEnabled  Boolean           @default(true)
+  settings   Json?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, moduleType])
+  @@index([tenantId, isEnabled])
+}
+
+model ProductModuleConfig {
+  id         String            @id @default(cuid())
+  tenantId   String
+  productId  String
+  moduleType ProductModuleType
+  isEnabled  Boolean           @default(true)
+  sortOrder  Int               @default(0)
+  settings   Json?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, moduleType])
+  @@index([tenantId, productId, sortOrder])
+}
+
+model UserProductAccess {
+  id              String   @id @default(cuid())
+  tenantId        String
+  userId          String
+  productId       String
+  grantedByUserId String?
+  canView         Boolean  @default(true)
+  canDownload     Boolean  @default(true)
+  canEditProgress Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant        Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user          User    @relation("UserProductAccessUser", fields: [userId], references: [id], onDelete: Cascade)
+  product       Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  grantedByUser User?   @relation("UserProductAccessGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId, productId])
+  @@index([tenantId, productId])
+  @@index([tenantId, userId])
+}
+
+model ProductFeature {
+  id          String   @id @default(cuid())
+  tenantId    String
+  productId   String
+  title       String
+  description String?
+  sortOrder   Int      @default(0)
+  isVisible   Boolean  @default(true)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  steps   ProductStep[]
+  assets  ProductAsset[]
+
+  @@index([tenantId, productId, sortOrder])
+}
+
+model ProductStep {
+  id                String    @id @default(cuid())
+  tenantId          String
+  productId         String
+  featureId         String?
+  title             String
+  description       String?
+  sortOrder         Int       @default(0)
+  lockUntilComplete Boolean   @default(false)
+  isRequired        Boolean   @default(true)
+  releaseAt         DateTime?
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product           Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  feature           ProductFeature?        @relation(fields: [featureId], references: [id], onDelete: SetNull)
+  assets            ProductAsset[]
+  progressRecords   UserProductProgress[]
+  assetInteractions UserAssetInteraction[]
+  stepInteractions  UserStepInteraction[]
+  interactionEvents UserInteractionEvent[]
+  nodeItems         TenantNodeItem[]
+
+  @@index([tenantId, productId, sortOrder])
+  @@index([tenantId, featureId])
+}
+
+model ProductAsset {
+  id              String                      @id @default(cuid())
+  tenantId        String
+  productId       String
+  featureId       String?
+  stepId          String?
+  moduleType      ProductModuleType?
+  placement       ProductAssetPlacement       @default(LIBRARY)
+  interactionMode ProductAssetInteractionMode @default(OPEN)
+  title           String
+  description     String?
+  type            AssetType
+  url             String
+  previewUrl      String?
+  thumbnailUrl    String?
+  targetUrl       String?
+  openInNewTab    Boolean                     @default(true)
+  mimeType        String?
+  fileSizeBytes   Int?
+  durationSeconds Int?
+  isDownloadable  Boolean                     @default(false)
+  isPreview       Boolean                     @default(false)
+  sortOrder       Int                         @default(0)
+  metadata        Json?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product           Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  feature           ProductFeature?        @relation(fields: [featureId], references: [id], onDelete: SetNull)
+  step              ProductStep?           @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  userInteractions  UserAssetInteraction[]
+  interactionEvents UserInteractionEvent[]
+
+  @@index([tenantId, productId, sortOrder])
+  @@index([tenantId, moduleType, placement, sortOrder])
+  @@index([tenantId, stepId])
+}
+
+model VisitorSession {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String?
+  token      String   @unique
+  userAgent  String?
+  metadata   Json?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user              User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  assetInteractions UserAssetInteraction[]
+  stepInteractions  UserStepInteraction[]
+  interactionEvents UserInteractionEvent[]
+
+  @@index([tenantId, userId])
+  @@index([tenantId, lastSeenAt])
+}
+
+model UserProductProgress {
+  id              String         @id @default(cuid())
+  tenantId        String
+  userId          String
+  productId       String
+  stepId          String
+  status          ProgressStatus @default(NOT_STARTED)
+  firstAccessedAt DateTime?
+  lastAccessedAt  DateTime?
+  completedAt     DateTime?
+  watchPercent    Float          @default(0)
+  downloadedAt    DateTime?
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  step    ProductStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, stepId])
+  @@index([tenantId, userId, productId])
+}
+
+model UserAssetInteraction {
+  id               String               @id @default(cuid())
+  tenantId         String
+  userId           String?
+  visitorSessionId String?
+  productId        String
+  assetId          String
+  stepId           String?
+  action           AssetInteractionType
+  watchedSeconds   Int?
+  downloaded       Boolean              @default(false)
+  occurredAt       DateTime             @default(now())
+  metadata         Json?
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  visitorSession VisitorSession? @relation(fields: [visitorSessionId], references: [id], onDelete: SetNull)
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  asset          ProductAsset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  step           ProductStep?    @relation(fields: [stepId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, userId, productId, occurredAt])
+  @@index([tenantId, visitorSessionId, occurredAt])
+  @@index([tenantId, assetId, occurredAt])
+}
+
+model UserStepInteraction {
+  id               String              @id @default(cuid())
+  tenantId         String
+  userId           String?
+  visitorSessionId String?
+  productId        String
+  stepId           String
+  action           StepInteractionType
+  progressPercent  Float?
+  occurredAt       DateTime            @default(now())
+  metadata         Json?
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  visitorSession VisitorSession? @relation(fields: [visitorSessionId], references: [id], onDelete: SetNull)
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  step           ProductStep     @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, productId, occurredAt])
+  @@index([tenantId, visitorSessionId, occurredAt])
+  @@index([tenantId, stepId, occurredAt])
+}
+
+model UserInteractionEvent {
+  id               String   @id @default(cuid())
+  tenantId         String
+  userId           String?
+  visitorSessionId String?
+  productId        String?
+  stepId           String?
+  assetId          String?
+  eventType        String
+  targetType       String?
+  targetId         String?
+  value            String?
+  metadata         Json?
+  occurredAt       DateTime @default(now())
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  visitorSession VisitorSession? @relation(fields: [visitorSessionId], references: [id], onDelete: SetNull)
+  product        Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  step           ProductStep?    @relation(fields: [stepId], references: [id], onDelete: SetNull)
+  asset          ProductAsset?   @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, userId, occurredAt])
+  @@index([tenantId, visitorSessionId, occurredAt])
+  @@index([tenantId, productId, eventType])
+}

@@ -1,0 +1,23 @@
+{
+  "type": "node-template",
+  "name": "Node Template",
+  "description": "Template base para criar novos nodes.",
+  "tags": [
+    "node",
+    "template"
+  ],
+  "defaultLayout": {
+    "w": [
+      2
+    ],
+    "h": [
+      6
+    ],
+    "minW": 1,
+    "minH": 3
+  },
+  "requiresAuth": false,
+  "internal": false,
+  "searchable": true,
+  "discoverable": true
+}

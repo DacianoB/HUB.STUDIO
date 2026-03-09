@@ -1,0 +1,24 @@
+{
+  "type": "library_view",
+  "name": "Library View",
+  "description": "Galeria conectada a um produto com layout configuravel estilo masonry/pinterest",
+  "tags": [
+    "node",
+    "library",
+    "gallery",
+    "produto",
+    "pinterest"
+  ],
+  "defaultLayout": {
+    "w": [
+      1
+    ],
+    "h": [
+      6,
+      8,
+      10
+    ],
+    "minW": 1,
+    "minH": 6
+  }
+}
