@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { JetBrains_Mono, Montserrat } from "next/font/google";
 
 import "./globals.css";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import { AppProviders } from "~/app/providers";
 
-const inter = Inter({ subsets: ["latin"] });
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
   title: "HUB.STUDIO",
@@ -16,7 +24,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
+      <body className={`${montserrat.variable} ${jetBrainsMono.variable} font-sans`}>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

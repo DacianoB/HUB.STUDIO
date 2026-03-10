@@ -33,7 +33,9 @@ function readTitle(props?: Record<string, unknown>) {
 }
 
 function readSubtitle(props?: Record<string, unknown>) {
-  return typeof props?.subtitle === 'string' ? props.subtitle : DEFAULT_SUBTITLE;
+  return typeof props?.subtitle === 'string'
+    ? props.subtitle
+    : DEFAULT_SUBTITLE;
 }
 
 function readVariableSource(
@@ -197,12 +199,15 @@ export function DashboardNodeText({ props }: DashboardNodeTextProps) {
 
   return (
     <article className="p-6">
-      <div className="flex h-full w-full flex-col justify-center gap-3">
+      <div className="flex h-full w-full flex-col justify-center gap-2">
         <div className="break-words text-balance" style={titleStyle}>
           {renderedTitle}
         </div>
         {renderedSubtitle ? (
-          <p className="break-words text-balance" style={subtitleStyle}>
+          <p
+            className="break-words font-mono text-balance"
+            style={subtitleStyle}
+          >
             {renderedSubtitle}
           </p>
         ) : null}
