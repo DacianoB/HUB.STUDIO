@@ -87,10 +87,13 @@ export function BrandingDashboard() {
   });
 
   const tenant = currentTenantQuery.data?.tenant;
-  const canEditBranding =
+  const canManageBrandingByRole =
     currentTenantQuery.data?.role === "OWNER" ||
     currentTenantQuery.data?.role === "ADMIN" ||
     currentTenantQuery.data?.role === "INSTRUCTOR";
+  const brandingBlockedByPolicy =
+    currentTenantQuery.data?.policy?.allowBrandingEditor === false;
+  const canEditBranding = canManageBrandingByRole && !brandingBlockedByPolicy;
   const serverDraft = useMemo(
     () => (tenant ? buildDraft({ name: tenant.name, settings: tenant.settings }) : null),
     [tenant]
@@ -226,7 +229,9 @@ export function BrandingDashboard() {
         <div className="space-y-6">
           {!canEditBranding ? (
             <div className="rounded-3xl border border-amber-400/20 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
-              Company settings are read-only for your current role. Owner, admin, or GM access is required to edit branding.
+              {brandingBlockedByPolicy
+                ? "Branding edits are disabled for this tenant by the global admin policy."
+                : "Company settings are read-only for your current role. Owner, admin, or GM access is required to edit branding."}
             </div>
           ) : null}
 

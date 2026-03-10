@@ -8,8 +8,32 @@ import {
   tenantProcedure,
 } from "~/server/api/trpc";
 import { resolveVisitorSession } from "~/server/api/visitor-sessions";
+import {
+  assertProductCapacity,
+  assertProductPolicyCompliance,
+  ensureTenantPolicy,
+  tenantPolicySelect,
+} from "~/server/tenant-policy";
 
 const moduleTypeSchema = z.enum(["LIBRARY", "COURSE"]);
+
+type StepQuestionnaireOption = {
+  id: string;
+  label: string;
+};
+
+type StepQuestionnaire = {
+  prompt: string;
+  options: StepQuestionnaireOption[];
+  correctOptionId?: string;
+  successMessage?: string;
+};
+
+type StepMetadata = {
+  coverImageUrl?: string;
+  content?: string;
+  questionnaire?: StepQuestionnaire;
+};
 
 const moduleConfigSchema = z.object({
   moduleType: moduleTypeSchema,
@@ -67,6 +91,63 @@ function slugify(input: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+function readStepMetadata(metadata: unknown): StepMetadata {
+  if (!metadata || typeof metadata !== "object") {
+    return {};
+  }
+
+  const candidate = metadata as Record<string, unknown>;
+  const rawQuestionnaire =
+    candidate.questionnaire && typeof candidate.questionnaire === "object"
+      ? (candidate.questionnaire as Record<string, unknown>)
+      : null;
+  const rawOptions = Array.isArray(rawQuestionnaire?.options)
+    ? rawQuestionnaire.options
+    : [];
+  const options = rawOptions
+    .filter(
+      (option): option is Record<string, unknown> =>
+        Boolean(option) && typeof option === "object",
+    )
+    .map((option, index) => ({
+      id:
+        typeof option.id === "string" && option.id.trim()
+          ? option.id.trim()
+          : `option-${index + 1}`,
+      label: typeof option.label === "string" ? option.label.trim() : "",
+    }))
+    .filter((option) => option.label.length > 0);
+
+  const questionnaire =
+    rawQuestionnaire &&
+    typeof rawQuestionnaire.prompt === "string" &&
+    rawQuestionnaire.prompt.trim() &&
+    options.length >= 2
+      ? {
+          prompt: rawQuestionnaire.prompt.trim(),
+          options,
+          correctOptionId:
+            typeof rawQuestionnaire.correctOptionId === "string"
+              ? rawQuestionnaire.correctOptionId
+              : undefined,
+          successMessage:
+            typeof rawQuestionnaire.successMessage === "string" &&
+            rawQuestionnaire.successMessage.trim()
+              ? rawQuestionnaire.successMessage.trim()
+              : undefined,
+        }
+      : undefined;
+
+  return {
+    coverImageUrl:
+      typeof candidate.coverImageUrl === "string"
+        ? candidate.coverImageUrl
+        : undefined,
+    content: typeof candidate.content === "string" ? candidate.content : undefined,
+    questionnaire,
+  };
+}
+
 async function readTenantEnabledModules(
   db: {
     tenantModuleCapability: {
@@ -88,6 +169,22 @@ async function readTenantEnabledModules(
       .filter((entry: { isEnabled: boolean }) => entry.isEnabled)
       .map((entry: { moduleType: "LIBRARY" | "COURSE" }) => entry.moduleType),
   );
+}
+
+function assertRequestedModulesAreEnabledByTenant(
+  enabledByTenant: Set<"LIBRARY" | "COURSE">,
+  modules: Array<{ moduleType: "LIBRARY" | "COURSE"; isEnabled: boolean }>,
+) {
+  const blockedModule = modules.find(
+    (module) => module.isEnabled && !enabledByTenant.has(module.moduleType),
+  );
+
+  if (blockedModule) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `${blockedModule.moduleType} is disabled for this tenant.`,
+    });
+  }
 }
 
 async function createDemoCourseContent(
@@ -367,6 +464,110 @@ export const productsRouter = createTRPCRouter({
       };
     }),
 
+  courseViewerByProductId: publicTenantProcedure
+    .input(z.object({ productId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const product = await ctx.db.product.findFirst({
+        where: {
+          id: input.productId,
+          tenantId: ctx.tenantId,
+        },
+        include: {
+          steps: {
+            include: {
+              assets: {
+                orderBy: { sortOrder: "asc" },
+              },
+            },
+            orderBy: { sortOrder: "asc" },
+          },
+        },
+      });
+
+      if (!product) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
+      }
+
+      const progress = ctx.session?.user?.id
+        ? await ctx.db.userProductProgress.findMany({
+            where: {
+              tenantId: ctx.tenantId,
+              userId: ctx.session.user.id,
+              productId: input.productId,
+            },
+          })
+        : [];
+
+      const progressByStepId = new Map(progress.map((entry) => [entry.stepId, entry]));
+      const completedRequiredSteps = new Set(
+        product.steps
+          .filter((step) => {
+            if (!step.isRequired) return false;
+            return progressByStepId.get(step.id)?.status === "COMPLETED";
+          })
+          .map((step) => step.id),
+      );
+
+      const steps = product.steps.map((step, index, allSteps) => {
+        const metadata = readStepMetadata(step.metadata);
+        const previousRequiredIncomplete = allSteps
+          .slice(0, index)
+          .find((previousStep) => {
+            if (!previousStep.isRequired) return false;
+            return !completedRequiredSteps.has(previousStep.id);
+          });
+        const requiresPreviousCompletion =
+          (product.lockSequentialSteps && index > 0) || step.lockUntilComplete;
+        const progressEntry = progressByStepId.get(step.id) ?? null;
+        const isCompleted = progressEntry?.status === "COMPLETED";
+        const isUnlocked = !requiresPreviousCompletion || !previousRequiredIncomplete;
+
+        return {
+          id: step.id,
+          title: step.title,
+          description: step.description,
+          sortOrder: step.sortOrder,
+          isRequired: step.isRequired,
+          lockUntilComplete: step.lockUntilComplete,
+          isUnlocked,
+          isCompleted,
+          blockedByStepId: isUnlocked ? null : previousRequiredIncomplete?.id ?? null,
+          content: metadata.content ?? "",
+          coverImageUrl: metadata.coverImageUrl ?? "",
+          questionnaire: metadata.questionnaire ?? null,
+          progress: progressEntry
+            ? {
+                status: progressEntry.status,
+                completedAt: progressEntry.completedAt,
+                metadata: progressEntry.metadata,
+              }
+            : null,
+          assets: step.assets.map((asset) => ({
+            id: asset.id,
+            title: asset.title,
+            description: asset.description,
+            type: asset.type,
+            url: asset.url,
+            targetUrl: asset.targetUrl,
+            openInNewTab: asset.openInNewTab,
+            interactionMode: asset.interactionMode,
+            isDownloadable: asset.isDownloadable,
+          })),
+        };
+      });
+
+      return {
+        product: {
+          id: product.id,
+          name: product.name,
+          description: product.description,
+          lockSequentialSteps: product.lockSequentialSteps,
+        },
+        steps,
+        canTrackProgress: Boolean(ctx.session?.user?.id),
+      };
+    }),
+
   toggleLibraryAssetLike: publicTenantProcedure
     .input(
       z.object({
@@ -497,14 +698,40 @@ export const productsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const tenant = await ctx.db.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: {
+          id: true,
+          isOpen: true,
+          policy: {
+            select: tenantPolicySelect,
+          },
+        },
+      });
+      if (!tenant) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      }
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      await assertProductCapacity(ctx.db, ctx.tenantId, policy);
+      assertProductPolicyCompliance(policy, {
+        type: input.type,
+        isFree: input.isFree,
+        lockSequentialSteps: input.lockSequentialSteps,
+        createDemoCourseContent: input.createDemoCourseContent,
+        modules: input.modules,
+      });
+
       const normalizedPrice = input.isFree ? null : input.priceCents ?? 0;
-      if (!input.isFree && normalizedPrice <= 0) {
+      if (!input.isFree && normalizedPrice !== null && normalizedPrice <= 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Paid products must have a price greater than zero.",
         });
       }
       const enabledByTenant = await readTenantEnabledModules(ctx.db, ctx.tenantId);
+      assertRequestedModulesAreEnabledByTenant(enabledByTenant, input.modules);
       const allowedModules = input.modules.filter(
         (module) => module.isEnabled && enabledByTenant.has(module.moduleType),
       );
@@ -573,21 +800,43 @@ export const productsRouter = createTRPCRouter({
         }),
     )
     .mutation(async ({ ctx, input }) => {
-      const existing = await ctx.db.product.findFirst({
-        where: { id: input.productId, tenantId: ctx.tenantId },
-      });
+      const [existing, tenant] = await Promise.all([
+        ctx.db.product.findFirst({
+          where: { id: input.productId, tenantId: ctx.tenantId },
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
       if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
 
       const { productId, ...payload } = input;
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      assertProductPolicyCompliance(policy, {
+        type: payload.type ?? existing.type,
+        isFree: payload.isFree ?? existing.isFree,
+        lockSequentialSteps: payload.lockSequentialSteps ?? existing.lockSequentialSteps,
+        modules: payload.modules,
+      });
       const nextIsFree = payload.isFree ?? existing.isFree;
       const nextPrice = nextIsFree ? null : payload.priceCents ?? existing.priceCents ?? 0;
-      if (!nextIsFree && nextPrice <= 0) {
+      if (!nextIsFree && nextPrice !== null && nextPrice <= 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Paid products must have a price greater than zero.",
         });
       }
       const enabledByTenant = await readTenantEnabledModules(ctx.db, ctx.tenantId);
+      assertRequestedModulesAreEnabledByTenant(enabledByTenant, payload.modules ?? []);
       const allowedModules = (payload.modules ?? []).filter(
         (module) => module.isEnabled && enabledByTenant.has(module.moduleType),
       );
@@ -641,10 +890,29 @@ export const productsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const product = await ctx.db.product.findFirst({
-        where: { id: input.productId, tenantId: ctx.tenantId },
-      });
+      const [product, tenant] = await Promise.all([
+        ctx.db.product.findFirst({
+          where: { id: input.productId, tenantId: ctx.tenantId },
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      assertProductPolicyCompliance(policy, {
+        createDemoCourseContent: true,
+      });
 
       await createDemoCourseContent(ctx.db, ctx.tenantId, product.id, product.lockSequentialSteps);
       return { ok: true };
@@ -658,6 +926,37 @@ export const productsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const [product, tenant] = await Promise.all([
+        ctx.db.product.findFirst({
+          where: {
+            id: input.productId,
+            tenantId: ctx.tenantId,
+          },
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
+      if (!product) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
+      }
+      if (!tenant) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      }
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      if (product.status === "ARCHIVED" && input.status !== "ARCHIVED") {
+        await assertProductCapacity(ctx.db, ctx.tenantId, policy);
+      }
+
       return ctx.db.product.updateMany({
         where: {
           id: input.productId,

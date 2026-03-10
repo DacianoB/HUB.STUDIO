@@ -7,6 +7,12 @@ import {
   tenantProcedure,
 } from "~/server/api/trpc";
 import { isSupportedAssetUrl } from "~/server/uploads";
+import {
+  assertAssetPolicyCompliance,
+  assertProductPolicyCompliance,
+  ensureTenantPolicy,
+  tenantPolicySelect,
+} from "~/server/tenant-policy";
 
 const assetUrlSchema = z.string().max(2048).refine(isSupportedAssetUrl, {
   message: "Expected a valid http(s) URL or internal upload path.",
@@ -44,10 +50,28 @@ export const productStepsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const product = await ctx.db.product.findFirst({
-        where: { id: input.productId, tenantId: ctx.tenantId },
-      });
+      const [product, tenant] = await Promise.all([
+        ctx.db.product.findFirst({
+          where: { id: input.productId, tenantId: ctx.tenantId },
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      assertProductPolicyCompliance(policy, {
+        lockSequentialSteps: input.lockUntilComplete,
+      });
       return ctx.db.productStep.create({
         data: {
           tenantId: ctx.tenantId,
@@ -70,10 +94,28 @@ export const productStepsRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const { stepId, ...rest } = input;
-      const step = await ctx.db.productStep.findFirst({
-        where: { id: stepId, tenantId: ctx.tenantId },
-      });
+      const [step, tenant] = await Promise.all([
+        ctx.db.productStep.findFirst({
+          where: { id: stepId, tenantId: ctx.tenantId },
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
       if (!step) throw new TRPCError({ code: "NOT_FOUND", message: "Step not found." });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      assertProductPolicyCompliance(policy, {
+        lockSequentialSteps: rest.lockUntilComplete,
+      });
       return ctx.db.productStep.update({
         where: { id: stepId },
         data: rest,
@@ -120,10 +162,29 @@ export const productStepsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const product = await ctx.db.product.findFirst({
-        where: { id: input.productId, tenantId: ctx.tenantId },
-      });
+      const [product, tenant] = await Promise.all([
+        ctx.db.product.findFirst({
+          where: { id: input.productId, tenantId: ctx.tenantId },
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      assertAssetPolicyCompliance(policy, {
+        isDownloadable: input.isDownloadable,
+        interactionMode: input.interactionMode,
+      });
 
       if (input.stepId) {
         const step = await ctx.db.productStep.findFirst({
@@ -189,10 +250,29 @@ export const productStepsRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const { assetId, stepId, placement, moduleType, ...rest } = input;
-      const asset = await ctx.db.productAsset.findFirst({
-        where: { id: assetId, tenantId: ctx.tenantId },
-      });
+      const [asset, tenant] = await Promise.all([
+        ctx.db.productAsset.findFirst({
+          where: { id: assetId, tenantId: ctx.tenantId },
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
       if (!asset) throw new TRPCError({ code: "NOT_FOUND", message: "Asset not found." });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      assertAssetPolicyCompliance(policy, {
+        isDownloadable: rest.isDownloadable ?? asset.isDownloadable,
+        interactionMode: rest.interactionMode ?? asset.interactionMode,
+      });
 
       if (stepId) {
         const step = await ctx.db.productStep.findFirst({

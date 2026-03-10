@@ -309,7 +309,7 @@ function expandLibraryViewItems(
       : breakpoint === 'sm'
         ? Math.max(2, activeCols - 1)
         : activeCols;
-  const detailHeight = breakpoint === 'lg' ? 20 : breakpoint === 'sm' ? 22 : 20;
+  const detailHeight = breakpoint === 'lg' ? 14 : breakpoint === 'sm' ? 22 : 20;
 
   for (const item of items) {
     if (isLibraryViewNodeType(item.type)) {

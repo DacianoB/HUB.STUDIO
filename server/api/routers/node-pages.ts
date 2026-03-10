@@ -6,6 +6,12 @@ import {
   tenantAdminProcedure,
   tenantProcedure,
 } from "~/server/api/trpc";
+import {
+  assertPageCapacity,
+  assertPagePolicyCompliance,
+  ensureTenantPolicy,
+  tenantPolicySelect,
+} from "~/server/tenant-policy";
 
 const nodePositionSchema = z.object({
   xs: z.object({ x: z.number().int(), y: z.number().int(), w: z.number().int(), h: z.number().int() }),
@@ -43,6 +49,20 @@ export const nodePagesRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const tenant = await ctx.db.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: {
+          id: true,
+          isOpen: true,
+          policy: {
+            select: tenantPolicySelect,
+          },
+        },
+      });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+
       const payload = {
         tenantId: ctx.tenantId,
         name: input.name,
@@ -56,6 +76,14 @@ export const nodePagesRouter = createTRPCRouter({
         hidden: input.hidden,
         sortOrder: input.sortOrder,
       };
+      assertPagePolicyCompliance(policy, {
+        requiresAuth: input.requiresAuth,
+        editableByUser: input.editableByUser,
+        internalRoute: input.internalRoute,
+        indexable: input.indexable,
+        hidden: input.hidden,
+      });
+
       if (input.pageId) {
         const existing = await ctx.db.tenantNodePage.findFirst({
           where: { id: input.pageId, tenantId: ctx.tenantId },
@@ -72,6 +100,7 @@ export const nodePagesRouter = createTRPCRouter({
           data: payload,
         });
       }
+      await assertPageCapacity(ctx.db, ctx.tenantId, policy);
       if (["", "dashboard"].includes(payload.slug)) {
         throw new TRPCError({
           code: "FORBIDDEN",

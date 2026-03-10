@@ -4,6 +4,11 @@ import { ZodError } from "zod";
 
 import { getServerAuthSession } from "~/server/auth";
 import { db } from "~/server/db";
+import {
+  assertActiveMemberCapacity,
+  ensureTenantPolicy,
+  tenantPolicySelect,
+} from "~/server/tenant-policy";
 
 interface CreateContextOptions {
   req?: Request;
@@ -18,6 +23,7 @@ interface TenantAccess {
 interface RequestedTenant {
   id: string;
   slug: string;
+  isOpen?: boolean;
 }
 
 async function resolveTenantAccess(input: {
@@ -59,8 +65,21 @@ async function resolveTenantAccess(input: {
     tenantId || tenantSlug
       ? await db.tenant.findFirst({
           where: tenantId ? { id: tenantId } : { slug: tenantSlug ?? undefined },
+          select: {
+            id: true,
+            slug: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
         })
       : null;
+
+  const requestedPolicy = requestedTenant
+    ? requestedTenant.policy ??
+      (await ensureTenantPolicy(db, requestedTenant.id, requestedTenant.isOpen))
+    : null;
 
   if (requestedTenant && isGlobalAdmin) {
     return {
@@ -80,6 +99,13 @@ async function resolveTenantAccess(input: {
       },
     });
     if (invitation && invitation.status === "ACTIVE") {
+      await assertActiveMemberCapacity(
+        db,
+        requestedTenant.id,
+        requestedPolicy!,
+        membership?.status,
+      );
+
       const invitedMembership = await db.tenantMembership.upsert({
         where: {
           tenantId_userId: {
@@ -130,6 +156,26 @@ async function resolveTenantAccess(input: {
       },
     });
     if (firstActiveInvite) {
+      const existingMembership = await db.tenantMembership.findUnique({
+        where: {
+          tenantId_userId: {
+            tenantId: firstActiveInvite.tenantId,
+            userId,
+          },
+        },
+      });
+      const invitePolicy = await ensureTenantPolicy(
+        db,
+        firstActiveInvite.tenantId,
+        firstActiveInvite.tenant.isOpen,
+      );
+      await assertActiveMemberCapacity(
+        db,
+        firstActiveInvite.tenantId,
+        invitePolicy,
+        existingMembership?.status,
+      );
+
       const invitedMembership = await db.tenantMembership.upsert({
         where: {
           tenantId_userId: {
@@ -164,7 +210,14 @@ async function resolveTenantAccess(input: {
     }
   }
 
-  if (requestedTenant?.isOpen) {
+  if (requestedTenant && requestedPolicy?.joinMode === "OPEN_AUTO_APPROVE") {
+    await assertActiveMemberCapacity(
+      db,
+      requestedTenant.id,
+      requestedPolicy,
+      membership?.status,
+    );
+
     const openMembership = await db.tenantMembership.upsert({
       where: {
         tenantId_userId: {
@@ -190,7 +243,27 @@ async function resolveTenantAccess(input: {
       tenantId: openMembership.tenantId,
       tenantSlug: openMembership.tenant.slug,
       role: openMembership.role,
-    };
+      };
+    }
+
+  if (requestedTenant && requestedPolicy?.joinMode === "OPEN_REQUEST_APPROVAL") {
+    await db.tenantMembership.upsert({
+      where: {
+        tenantId_userId: {
+          tenantId: requestedTenant.id,
+          userId,
+        },
+      },
+      update: {
+        status: "PENDING",
+      },
+      create: {
+        tenantId: requestedTenant.id,
+        userId,
+        role: "MEMBER",
+        status: "PENDING",
+      },
+    });
   }
 
   const fallbackMembership = await db.tenantMembership.findFirst({
@@ -228,6 +301,7 @@ async function resolveRequestedTenant(input: {
     select: {
       id: true,
       slug: true,
+      isOpen: true,
     },
   });
 

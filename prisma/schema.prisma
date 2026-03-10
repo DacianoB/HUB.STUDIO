@@ -20,6 +20,12 @@ enum MembershipStatus {
   BLOCKED
 }
 
+enum TenantJoinMode {
+  INVITE_ONLY
+  OPEN_AUTO_APPROVE
+  OPEN_REQUEST_APPROVAL
+}
+
 enum ProductType {
   COURSE
   PHYSICAL_PRODUCT
@@ -133,6 +139,32 @@ model Tenant {
   productAccesses    UserProductAccess[]
   moduleCapabilities TenantModuleCapability[]
   productModules     ProductModuleConfig[]
+  policy             TenantPolicy?
+}
+
+model TenantPolicy {
+  id                     String         @id @default(cuid())
+  tenantId               String         @unique
+  joinMode               TenantJoinMode @default(INVITE_ONLY)
+  maxOutstandingInvites  Int?
+  maxActiveMembers       Int?
+  maxProducts            Int?
+  maxPages               Int?
+  allowedProductTypes    ProductType[]  @default([COURSE, PHYSICAL_PRODUCT, DIGITAL_PRODUCT, SERVICE, CUSTOM])
+  allowPaidProducts      Boolean        @default(true)
+  allowDownloads         Boolean        @default(true)
+  allowSequentialCourses Boolean        @default(true)
+  allowDemoCourseContent Boolean        @default(true)
+  allowPublicPages       Boolean        @default(true)
+  allowHiddenPages       Boolean        @default(true)
+  allowIndexablePages    Boolean        @default(true)
+  allowInternalRoutePages Boolean       @default(true)
+  allowUserEditablePages Boolean        @default(true)
+  allowBrandingEditor    Boolean        @default(true)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model TenantNodePage {

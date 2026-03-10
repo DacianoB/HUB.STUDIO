@@ -645,6 +645,9 @@ export function PagesDashboard() {
   const utils = api.useUtils();
   const pagesQuery = api.nodePages.list.useQuery();
   const productsQuery = api.products.list.useQuery();
+  const currentTenantQuery = api.tenants.current.useQuery(undefined, {
+    retry: false,
+  });
 
   const [selectedPageId, setSelectedPageId] = useState("");
   const [pageName, setPageName] = useState("");
@@ -701,6 +704,12 @@ export function PagesDashboard() {
   );
 
   const pages = useMemo(() => (pagesQuery.data ?? []) as PageItem[], [pagesQuery.data]);
+  const pageLimitReached =
+    (currentTenantQuery.data?.policy?.maxPages ?? null) !== null &&
+    (currentTenantQuery.data?.usage.pages ?? 0) >=
+      (currentTenantQuery.data?.policy?.maxPages ?? 0);
+  const allowUserEditablePages =
+    currentTenantQuery.data?.policy?.allowUserEditablePages ?? true;
   const runtimePagesConfig = useMemo(() => buildRuntimePagesConfig(pages), [pages]);
   const selectedPage = useMemo(
     () => pages.find((page) => page.id === selectedPageId) ?? null,
@@ -945,6 +954,8 @@ export function PagesDashboard() {
   }
 
   async function createPage(parentPageId?: string) {
+    if (pageLimitReached) return;
+
     const existing = new Set(pages.map((page) => page.slug.replace(/^\/+|\/+$/g, "")));
     let slug = "new-page";
     let index = 0;
@@ -969,6 +980,11 @@ export function PagesDashboard() {
   useEffect(() => {
     setPageLayouts(buildLayoutsFromPage(selectedPage));
   }, [selectedPage]);
+
+  useEffect(() => {
+    if (allowUserEditablePages || !pageEditableByUser) return;
+    setPageEditableByUser(false);
+  }, [allowUserEditablePages, pageEditableByUser]);
 
   async function saveGridLayout() {
     if (!selectedPage) return;
@@ -1125,6 +1141,7 @@ export function PagesDashboard() {
         <button
           type="button"
           onClick={() => void createPage(addParentId ?? undefined)}
+          disabled={pageLimitReached}
           className="flex h-[52px] w-[52px] items-center justify-center rounded-2xl border border-white/80 bg-transparent text-white transition hover:bg-white/5"
           aria-label={addLabel}
           title={addLabel}
@@ -1176,6 +1193,7 @@ export function PagesDashboard() {
           <button
             type="button"
             onClick={() => void createPage(fromPageId)}
+            disabled={pageLimitReached}
             className="flex h-[44px] w-[44px] items-center justify-center rounded-2xl border border-white/80 bg-transparent text-white transition hover:bg-white/5"
             aria-label="Add child page"
             title="Add child page"
@@ -1255,14 +1273,21 @@ export function PagesDashboard() {
       actions={
         <Button
           className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400"
+          disabled={pageLimitReached}
           onClick={() => void createPage()}
         >
           <Plus className="mr-2 h-4 w-4" />
-          New root page
+          {pageLimitReached ? "Page limit reached" : "New root page"}
         </Button>
       }
     >
       <div className="space-y-4">
+        {pageLimitReached ? (
+          <div className="rounded-3xl border border-amber-400/20 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+            This tenant is at its configured page limit. Remove an existing custom page or ask a
+            global admin to raise the cap.
+          </div>
+        ) : null}
         <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
           <div className="mb-4 flex items-center gap-2">
             <Waypoints className="h-4 w-4 text-sky-300" />
@@ -1353,7 +1378,7 @@ export function PagesDashboard() {
                         onChange={(event) =>
                           setPageEditableByUser(event.target.checked)
                         }
-                        disabled={selectedPage.isSystem}
+                        disabled={selectedPage.isSystem || !allowUserEditablePages}
                       />
                       Page editable by user
                     </label>

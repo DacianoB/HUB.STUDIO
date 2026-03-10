@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { DashboardNodeLibraryAssetItem } from "~/app/_nodes/node-library-asset-item/node";
 import { DashboardNodeLibraryView } from "~/app/_nodes/node-library-view/node";
+import { DashboardNodeStepViewer } from "~/app/_nodes/node-step-viewer/node";
 import { DashboardNodeText } from "~/app/_nodes/node-text/node";
 
 type NodeProps = {
@@ -48,6 +49,8 @@ export const ComponentRegistry: Record<string, React.ComponentType<NodeProps>> =
     ),
     "node-library_view": ({ props }) => <DashboardNodeLibraryView props={props} />,
     library_view: ({ props }) => <DashboardNodeLibraryView props={props} />,
+    "node-step-viewer": ({ props }) => <DashboardNodeStepViewer props={props} />,
+    "step-viewer": ({ props }) => <DashboardNodeStepViewer props={props} />,
     "node-text": ({ props }) => <DashboardNodeText props={props} />,
     text: ({ props }) => <DashboardNodeText props={props} />,
   },

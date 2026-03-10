@@ -8,6 +8,22 @@ import {
 } from "~/server/api/trpc";
 import { resolveVisitorSession } from "~/server/api/visitor-sessions";
 
+type StepQuestionnaireOption = {
+  id: string;
+  label: string;
+};
+
+type StepQuestionnaire = {
+  prompt: string;
+  options: StepQuestionnaireOption[];
+  correctOptionId?: string;
+  successMessage?: string;
+};
+
+type StepMetadata = {
+  questionnaire?: StepQuestionnaire;
+};
+
 async function ensureStepBelongsToProduct(input: {
   db: typeof import("~/server/db").db;
   tenantId: string;
@@ -27,6 +43,136 @@ async function ensureStepBelongsToProduct(input: {
   }
 
   return step;
+}
+
+function readStepMetadata(metadata: unknown): StepMetadata {
+  if (!metadata || typeof metadata !== "object") {
+    return {};
+  }
+
+  const candidate = metadata as Record<string, unknown>;
+  const rawQuestionnaire =
+    candidate.questionnaire && typeof candidate.questionnaire === "object"
+      ? (candidate.questionnaire as Record<string, unknown>)
+      : null;
+  const rawOptions = Array.isArray(rawQuestionnaire?.options)
+    ? rawQuestionnaire.options
+    : [];
+  const options = rawOptions
+    .filter(
+      (option): option is Record<string, unknown> =>
+        Boolean(option) && typeof option === "object",
+    )
+    .map((option, index) => ({
+      id:
+        typeof option.id === "string" && option.id.trim()
+          ? option.id.trim()
+          : `option-${index + 1}`,
+      label: typeof option.label === "string" ? option.label.trim() : "",
+    }))
+    .filter((option) => option.label.length > 0);
+
+  if (
+    !rawQuestionnaire ||
+    typeof rawQuestionnaire.prompt !== "string" ||
+    !rawQuestionnaire.prompt.trim() ||
+    options.length < 2
+  ) {
+    return {};
+  }
+
+  return {
+    questionnaire: {
+      prompt: rawQuestionnaire.prompt.trim(),
+      options,
+      correctOptionId:
+        typeof rawQuestionnaire.correctOptionId === "string"
+          ? rawQuestionnaire.correctOptionId
+          : undefined,
+      successMessage:
+        typeof rawQuestionnaire.successMessage === "string" &&
+        rawQuestionnaire.successMessage.trim()
+          ? rawQuestionnaire.successMessage.trim()
+          : undefined,
+    },
+  };
+}
+
+async function ensureStepUnlocked(input: {
+  db: typeof import("~/server/db").db;
+  tenantId: string;
+  userId: string;
+  productId: string;
+  stepId: string;
+}) {
+  const product = await input.db.product.findFirst({
+    where: {
+      id: input.productId,
+      tenantId: input.tenantId,
+    },
+    include: {
+      steps: {
+        orderBy: {
+          sortOrder: "asc",
+        },
+      },
+    },
+  });
+
+  if (!product) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
+  }
+
+  const currentIndex = product.steps.findIndex((step) => step.id === input.stepId);
+  if (currentIndex < 0) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Step not found." });
+  }
+
+  const currentStep = product.steps[currentIndex];
+  const requiresPreviousCompletion =
+    (product.lockSequentialSteps && currentIndex > 0) ||
+    Boolean(currentStep?.lockUntilComplete);
+
+  if (!requiresPreviousCompletion) {
+    return currentStep;
+  }
+
+  const previousRequiredSteps = product.steps
+    .slice(0, currentIndex)
+    .filter((step) => step.isRequired);
+
+  if (!previousRequiredSteps.length) {
+    return currentStep;
+  }
+
+  const completedProgress = await input.db.userProductProgress.findMany({
+    where: {
+      tenantId: input.tenantId,
+      userId: input.userId,
+      productId: input.productId,
+      stepId: {
+        in: previousRequiredSteps.map((step) => step.id),
+      },
+      status: "COMPLETED",
+    },
+    select: {
+      stepId: true,
+    },
+  });
+
+  const completedStepIds = new Set(completedProgress.map((entry) => entry.stepId));
+  const blockingStep = previousRequiredSteps.find(
+    (step) => !completedStepIds.has(step.id),
+  );
+
+  if (blockingStep) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `Complete "${blockingStep.title}" before this step.`,
+    });
+  }
+
+  return currentStep;
 }
 
 export const progressRouter = createTRPCRouter({
@@ -291,5 +437,198 @@ export const progressRouter = createTRPCRouter({
         progress,
         nextStep,
       };
+    }),
+
+  completeStep: tenantProcedure
+    .input(
+      z.object({
+        productId: z.string().cuid(),
+        stepId: z.string().cuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ensureStepUnlocked({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        userId: ctx.session!.user.id,
+        productId: input.productId,
+        stepId: input.stepId,
+      });
+
+      return ctx.db.$transaction(async (tx) => {
+        const existing = await tx.userProductProgress.findUnique({
+          where: {
+            tenantId_userId_stepId: {
+              tenantId: ctx.tenantId,
+              userId: ctx.session!.user.id,
+              stepId: input.stepId,
+            },
+          },
+        });
+
+        const progress = await tx.userProductProgress.upsert({
+          where: {
+            tenantId_userId_stepId: {
+              tenantId: ctx.tenantId,
+              userId: ctx.session!.user.id,
+              stepId: input.stepId,
+            },
+          },
+          create: {
+            tenantId: ctx.tenantId,
+            userId: ctx.session!.user.id,
+            productId: input.productId,
+            stepId: input.stepId,
+            firstAccessedAt: new Date(),
+            lastAccessedAt: new Date(),
+            completedAt: new Date(),
+            status: "COMPLETED",
+            watchPercent: 100,
+          },
+          update: {
+            lastAccessedAt: new Date(),
+            completedAt: new Date(),
+            status: "COMPLETED",
+            watchPercent: 100,
+          },
+        });
+
+        await tx.userStepInteraction.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.session!.user.id,
+            productId: input.productId,
+            stepId: input.stepId,
+            action: "COMPLETED",
+            progressPercent: 100,
+          },
+        });
+
+        return {
+          progress,
+          wasAlreadyCompleted: existing?.status === "COMPLETED",
+        };
+      });
+    }),
+
+  submitStepQuestionnaire: tenantProcedure
+    .input(
+      z.object({
+        productId: z.string().cuid(),
+        stepId: z.string().cuid(),
+        answerId: z.string().min(1).max(191),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const step = await ensureStepUnlocked({
+        db: ctx.db,
+        tenantId: ctx.tenantId,
+        userId: ctx.session!.user.id,
+        productId: input.productId,
+        stepId: input.stepId,
+      });
+
+      const metadata = readStepMetadata(step.metadata);
+      const questionnaire = metadata.questionnaire;
+
+      if (!questionnaire) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This step does not have a questionnaire.",
+        });
+      }
+
+      const selectedOption = questionnaire.options.find(
+        (option) => option.id === input.answerId,
+      );
+
+      if (!selectedOption) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Selected answer is not valid for this questionnaire.",
+        });
+      }
+
+      const isCorrect =
+        questionnaire.correctOptionId == null ||
+        questionnaire.correctOptionId === input.answerId;
+
+      return ctx.db.$transaction(async (tx) => {
+        const existing = await tx.userProductProgress.findUnique({
+          where: {
+            tenantId_userId_stepId: {
+              tenantId: ctx.tenantId,
+              userId: ctx.session!.user.id,
+              stepId: input.stepId,
+            },
+          },
+        });
+
+        const nextMetadata = {
+          ...(existing?.metadata && typeof existing.metadata === "object"
+            ? (existing.metadata as Record<string, unknown>)
+            : {}),
+          questionnaire: {
+            answerId: input.answerId,
+            answeredAt: new Date().toISOString(),
+            passed: isCorrect,
+          },
+        };
+
+        const progress = await tx.userProductProgress.upsert({
+          where: {
+            tenantId_userId_stepId: {
+              tenantId: ctx.tenantId,
+              userId: ctx.session!.user.id,
+              stepId: input.stepId,
+            },
+          },
+          create: {
+            tenantId: ctx.tenantId,
+            userId: ctx.session!.user.id,
+            productId: input.productId,
+            stepId: input.stepId,
+            firstAccessedAt: new Date(),
+            lastAccessedAt: new Date(),
+            completedAt: isCorrect ? new Date() : null,
+            status: isCorrect ? "COMPLETED" : "IN_PROGRESS",
+            watchPercent: isCorrect ? 100 : existing?.watchPercent ?? 0,
+            metadata: nextMetadata,
+          },
+          update: {
+            lastAccessedAt: new Date(),
+            completedAt: isCorrect ? new Date() : null,
+            status: isCorrect ? "COMPLETED" : "IN_PROGRESS",
+            watchPercent: isCorrect ? 100 : undefined,
+            metadata: nextMetadata,
+          },
+        });
+
+        await tx.userStepInteraction.create({
+          data: {
+            tenantId: ctx.tenantId,
+            userId: ctx.session!.user.id,
+            productId: input.productId,
+            stepId: input.stepId,
+            action: isCorrect ? "COMPLETED" : "PROGRESSED",
+            progressPercent: isCorrect ? 100 : existing?.watchPercent ?? 0,
+            metadata: {
+              questionnaire: {
+                answerId: input.answerId,
+                passed: isCorrect,
+              },
+            },
+          },
+        });
+
+        return {
+          correct: isCorrect,
+          successMessage:
+            isCorrect
+              ? questionnaire.successMessage ?? "Step completed."
+              : "Try again before unlocking the next step.",
+          progress,
+        };
+      });
     }),
 });

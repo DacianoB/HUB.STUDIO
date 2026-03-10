@@ -75,6 +75,14 @@ export function GlobalAdminNavbar() {
             >
               Admin
             </Link>
+            {session.user.isGlobalAdmin ? (
+              <Link
+                href="/admin/global/tenants"
+                className="rounded bg-white px-3 py-1 font-semibold text-black"
+              >
+                Global
+              </Link>
+            ) : null}
           </div>
         </div>
       </div>

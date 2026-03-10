@@ -2,6 +2,11 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { createTRPCRouter, tenantAdminProcedure } from "~/server/api/trpc";
+import {
+  assertActiveMemberCapacity,
+  ensureTenantPolicy,
+  tenantPolicySelect,
+} from "~/server/tenant-policy";
 
 export const usersRouter = createTRPCRouter({
   listMembers: tenantAdminProcedure.query(async ({ ctx }) => {
@@ -34,28 +39,53 @@ export const usersRouter = createTRPCRouter({
         }),
     )
     .mutation(async ({ ctx, input }) => {
-      const membership = await ctx.db.tenantMembership.findUnique({
-        where: {
-          tenantId_userId: {
-            tenantId: ctx.tenantId,
-            userId: input.userId,
+      const [membership, tenant] = await Promise.all([
+        ctx.db.tenantMembership.findUnique({
+          where: {
+            tenantId_userId: {
+              tenantId: ctx.tenantId,
+              userId: input.userId,
+            },
           },
-        },
-      });
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
 
       if (!membership) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Member not found." });
       }
+      if (!tenant) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      }
 
       if (
         membership.role === "OWNER" &&
-        ((input.role && input.role !== "OWNER") ||
-          (input.status && input.status !== membership.status))
+        (input.role || (input.status && input.status !== membership.status))
       ) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Owner membership cannot be changed from this screen.",
         });
+      }
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      if (input.status === "ACTIVE") {
+        await assertActiveMemberCapacity(
+          ctx.db,
+          ctx.tenantId,
+          policy,
+          membership.status,
+        );
       }
 
       return ctx.db.tenantMembership.update({
@@ -99,6 +129,38 @@ export const usersRouter = createTRPCRouter({
   approveJoinRequest: tenantAdminProcedure
     .input(z.object({ userId: z.string().cuid(), role: z.enum(["ADMIN", "INSTRUCTOR", "MEMBER"]).default("MEMBER") }))
     .mutation(async ({ ctx, input }) => {
+      const [existingMembership, tenant] = await Promise.all([
+        ctx.db.tenantMembership.findUnique({
+          where: {
+            tenantId_userId: {
+              tenantId: ctx.tenantId,
+              userId: input.userId,
+            },
+          },
+        }),
+        ctx.db.tenant.findUnique({
+          where: { id: ctx.tenantId },
+          select: {
+            id: true,
+            isOpen: true,
+            policy: {
+              select: tenantPolicySelect,
+            },
+          },
+        }),
+      ]);
+      if (!tenant) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+      }
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      await assertActiveMemberCapacity(
+        ctx.db,
+        ctx.tenantId,
+        policy,
+        existingMembership?.status,
+      );
+
       return ctx.db.tenantMembership.upsert({
         where: {
           tenantId_userId: {

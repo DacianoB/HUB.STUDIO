@@ -4,6 +4,7 @@ import posthog from "posthog-js";
 import { SessionProvider } from "next-auth/react";
 import { useEffect } from "react";
 
+import { GlobalAdminNavbar } from "~/app/_components/global-admin-navbar";
 import { TRPCReactProvider } from "~/trpc/react";
 
 function AnalyticsBootstrap() {
@@ -25,6 +26,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <TRPCReactProvider>
         <AnalyticsBootstrap />
+        <GlobalAdminNavbar />
         {children}
       </TRPCReactProvider>
     </SessionProvider>

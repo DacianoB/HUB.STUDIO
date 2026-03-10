@@ -32,6 +32,15 @@ type ProductAssetType = "VIDEO" | "PDF" | "FILE" | "IMAGE" | "LINK";
 type StepMetadata = {
   coverImageUrl?: string;
   content?: string;
+  questionnaire?: {
+    prompt: string;
+    options: Array<{
+      id: string;
+      label: string;
+    }>;
+    correctOptionId?: string;
+    successMessage?: string;
+  };
 };
 
 type LibraryAssetMetadata = {
@@ -72,11 +81,52 @@ const MODULE_COPY: Record<
 };
 
 const DEFAULT_PRODUCT_CURRENCY = "USD";
+const STEP_QUESTION_OPTION_IDS = [
+  "option-1",
+  "option-2",
+  "option-3",
+  "option-4",
+] as const;
 type PricingMode = "FREE" | "PAID";
 
 function readStepMetadata(step: { metadata?: unknown }): StepMetadata {
   if (!step.metadata || typeof step.metadata !== "object") return {};
   return step.metadata as StepMetadata;
+}
+
+function normalizeQuestionnaireOptions(options: Array<{ id: string; label: string }> | undefined) {
+  return STEP_QUESTION_OPTION_IDS.map((id, index) => {
+    const existing = options?.find((option) => option.id === id) ?? options?.[index];
+    return existing?.label ?? "";
+  });
+}
+
+function buildStepQuestionnaire(input: {
+  enabled: boolean;
+  prompt: string;
+  options: string[];
+  correctIndex: number;
+  successMessage: string;
+}) {
+  if (!input.enabled) return undefined;
+
+  const prompt = input.prompt.trim();
+  const options = input.options
+    .map((label, index) => ({
+      id: STEP_QUESTION_OPTION_IDS[index] ?? `option-${index + 1}`,
+      label: label.trim(),
+    }))
+    .filter((option) => option.label);
+
+  if (!prompt || options.length < 2) return undefined;
+
+  const safeCorrectIndex = Math.max(0, Math.min(input.correctIndex, options.length - 1));
+  return {
+    prompt,
+    options,
+    correctOptionId: options[safeCorrectIndex]?.id,
+    successMessage: input.successMessage.trim() || undefined,
+  };
 }
 
 function readLibraryAssetMetadata(asset: { metadata?: unknown }): LibraryAssetMetadata {
@@ -204,6 +254,9 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     { enabled: Boolean(isEditMode && productId) }
   );
   const tenantModuleCatalogQuery = api.products.tenantModuleCatalog.useQuery();
+  const currentTenantQuery = api.tenants.current.useQuery(undefined, {
+    retry: false,
+  });
 
   const createProductMutation = api.products.create.useMutation({
     onSuccess: async (product) => {
@@ -223,6 +276,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     onSuccess: async (createdStep) => {
       setNewStepTitle("");
       setNewStepDescription("");
+      setStepQuestionnaireEnabled(false);
+      setStepQuestionPrompt("");
+      setStepQuestionOptions(["", "", "", ""]);
+      setStepQuestionCorrectIndex(0);
+      setStepQuestionSuccessMessage("");
       setSelectedStepId(createdStep.id);
       if (!productId) return;
       await utils.products.byId.invalidate({ productId });
@@ -299,6 +357,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const [stepCoverImageUrl, setStepCoverImageUrl] = useState("");
   const [stepRequired, setStepRequired] = useState(true);
   const [stepLocked, setStepLocked] = useState(false);
+  const [stepQuestionnaireEnabled, setStepQuestionnaireEnabled] = useState(false);
+  const [stepQuestionPrompt, setStepQuestionPrompt] = useState("");
+  const [stepQuestionOptions, setStepQuestionOptions] = useState<string[]>(["", "", "", ""]);
+  const [stepQuestionCorrectIndex, setStepQuestionCorrectIndex] = useState(0);
+  const [stepQuestionSuccessMessage, setStepQuestionSuccessMessage] = useState("");
 
   const [courseAssetTitle, setCourseAssetTitle] = useState("");
   const [courseAssetUrl, setCourseAssetUrl] = useState("");
@@ -362,6 +425,27 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
       ),
     [tenantModuleCatalogQuery.data]
   );
+  const tenantPolicy = currentTenantQuery.data?.policy;
+  const tenantUsage = currentTenantQuery.data?.usage;
+  const allowedProductTypes = useMemo(
+    () => new Set(tenantPolicy?.allowedProductTypes ?? PRODUCT_TYPES.map(([type]) => type)),
+    [tenantPolicy?.allowedProductTypes],
+  );
+  const productLimitReached =
+    !isEditMode &&
+    (tenantPolicy?.maxProducts ?? null) !== null &&
+    (tenantUsage?.products ?? 0) >= (tenantPolicy?.maxProducts ?? 0);
+  const paidProductsAllowed = tenantPolicy?.allowPaidProducts ?? true;
+  const downloadsAllowed = tenantPolicy?.allowDownloads ?? true;
+  const sequentialCoursesAllowed = tenantPolicy?.allowSequentialCourses ?? true;
+  const demoCourseAllowed = tenantPolicy?.allowDemoCourseContent ?? true;
+  const productDraftBlocked =
+    !allowedProductTypes.has(productType) ||
+    (!paidProductsAllowed && pricingMode === "PAID") ||
+    (!downloadsAllowed && libraryAllowDownloads) ||
+    (!sequentialCoursesAllowed && courseLockSequential) ||
+    (!demoCourseAllowed && createDemoCourseContent) ||
+    productLimitReached;
 
   const activePlugins = useMemo(
     () =>
@@ -377,6 +461,37 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
       setSelectedPlugin(activePlugins[0] ?? "COURSE");
     }
   }, [activePlugins, selectedPlugin]);
+
+  useEffect(() => {
+    if (allowedProductTypes.has(productType)) return;
+    const fallbackType = PRODUCT_TYPES.find(([type]) => allowedProductTypes.has(type))?.[0];
+    if (fallbackType) {
+      setProductType(fallbackType);
+    }
+  }, [allowedProductTypes, productType]);
+
+  useEffect(() => {
+    if (paidProductsAllowed || pricingMode !== "PAID") return;
+    setPricingMode("FREE");
+  }, [paidProductsAllowed, pricingMode]);
+
+  useEffect(() => {
+    if (downloadsAllowed || !libraryAllowDownloads) return;
+    setLibraryAllowDownloads(false);
+    setCourseAssetDownloadable(false);
+    setGalleryAssetDownloadable(false);
+  }, [downloadsAllowed, libraryAllowDownloads]);
+
+  useEffect(() => {
+    if (sequentialCoursesAllowed || !courseLockSequential) return;
+    setCourseLockSequential(false);
+    setStepLocked(false);
+  }, [courseLockSequential, sequentialCoursesAllowed]);
+
+  useEffect(() => {
+    if (demoCourseAllowed || !createDemoCourseContent) return;
+    setCreateDemoCourseContent(false);
+  }, [createDemoCourseContent, demoCourseAllowed]);
 
   const courseSteps = useMemo(
     () => (product?.steps ?? []).sort((a, b) => a.sortOrder - b.sortOrder),
@@ -400,12 +515,25 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   useEffect(() => {
     if (!selectedCourseStep) return;
     const metadata = readStepMetadata(selectedCourseStep);
+    const questionnaire = metadata.questionnaire;
     setStepTitle(selectedCourseStep.title);
     setStepDescription(selectedCourseStep.description ?? "");
     setStepBody(metadata.content ?? "");
     setStepCoverImageUrl(metadata.coverImageUrl ?? "");
     setStepRequired(selectedCourseStep.isRequired);
     setStepLocked(selectedCourseStep.lockUntilComplete);
+    setStepQuestionnaireEnabled(Boolean(questionnaire));
+    setStepQuestionPrompt(questionnaire?.prompt ?? "");
+    setStepQuestionOptions(normalizeQuestionnaireOptions(questionnaire?.options));
+    setStepQuestionCorrectIndex(
+      Math.max(
+        0,
+        questionnaire?.options.findIndex(
+          (option) => option.id === questionnaire.correctOptionId,
+        ) ?? 0,
+      ),
+    );
+    setStepQuestionSuccessMessage(questionnaire?.successMessage ?? "");
   }, [selectedCourseStep]);
 
   const allAssets = useMemo(() => product?.assets ?? [], [product?.assets]);
@@ -437,6 +565,15 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const parsedPriceCents = useMemo(() => parsePriceInputToCents(priceInput), [priceInput]);
   const isPriceValid =
     isFreeProduct || (parsedPriceCents !== null && parsedPriceCents > 0 && Boolean(normalizedCurrency));
+  const enabledQuestionOptions = useMemo(
+    () => stepQuestionOptions.map((option) => option.trim()).filter(Boolean),
+    [stepQuestionOptions],
+  );
+  const isStepQuestionnaireValid =
+    !stepQuestionnaireEnabled ||
+    (Boolean(stepQuestionPrompt.trim()) &&
+      enabledQuestionOptions.length >= 2 &&
+      Boolean(stepQuestionOptions[stepQuestionCorrectIndex]?.trim()));
 
   useEffect(() => {
     setLibraryUploadError("");
@@ -631,6 +768,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
               disabled={
                 !title.trim() ||
                 !isPriceValid ||
+                productDraftBlocked ||
                 createProductMutation.isPending ||
                 updateProductMutation.isPending
               }
@@ -642,6 +780,13 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+          {productDraftBlocked ? (
+            <div className="rounded-3xl border border-amber-400/20 bg-amber-500/10 px-5 py-4 text-sm text-amber-100 xl:col-span-2">
+              {productLimitReached
+                ? "This tenant is at its configured product limit. Archive an existing product or ask a global admin to raise the cap."
+                : "Some product settings are blocked by the current tenant policy. Adjust the disabled options before saving."}
+            </div>
+          ) : null}
           <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
             <div className="mb-4">
               <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
@@ -680,7 +825,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                     <button
                       key={value}
                       type="button"
-                      onClick={() => setPricingMode(value)}
+                      onClick={() => {
+                        if (value === "PAID" && !paidProductsAllowed) return;
+                        setPricingMode(value);
+                      }}
+                      disabled={value === "PAID" && !paidProductsAllowed}
                       className={`flex-1 rounded-2xl border px-4 py-3 text-left transition ${
                         pricingMode === value
                           ? "border-emerald-400/50 bg-emerald-400/10 text-white"
@@ -739,7 +888,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                   <button
                     key={value}
                     type="button"
-                    onClick={() => setProductType(value)}
+                    onClick={() => {
+                      if (!allowedProductTypes.has(value)) return;
+                      setProductType(value);
+                    }}
+                    disabled={!allowedProductTypes.has(value)}
                     className={`h-11 rounded-xl border px-3 text-sm font-medium transition ${
                       productType === value
                         ? "border-sky-400/50 bg-sky-400/15 text-white"
@@ -810,6 +963,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                 <input
                   type="checkbox"
                   checked={libraryAllowDownloads}
+                  disabled={!downloadsAllowed}
                   onChange={(event) => setLibraryAllowDownloads(event.target.checked)}
                 />
                 Library items can be marked as downloadable
@@ -818,6 +972,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                 <input
                   type="checkbox"
                   checked={courseLockSequential}
+                  disabled={!sequentialCoursesAllowed}
                   onChange={(event) => setCourseLockSequential(event.target.checked)}
                 />
                 Course steps unlock sequentially
@@ -827,6 +982,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                   <input
                     type="checkbox"
                     checked={createDemoCourseContent}
+                    disabled={!demoCourseAllowed}
                     onChange={(event) => setCreateDemoCourseContent(event.target.checked)}
                   />
                   Create demo course steps automatically
@@ -901,6 +1057,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                             metadata: {
                               coverImageUrl: "",
                               content: "",
+                              questionnaire: undefined,
                             },
                           })
                         }
@@ -1017,9 +1174,97 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                 Locked until complete
                               </label>
                             </div>
+                            <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+                              <div className="flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                                    Completion questionnaire
+                                  </p>
+                                  <p className="mt-1 text-sm text-zinc-400">
+                                    Add one quick multiple-choice question before this step can be
+                                    marked complete.
+                                  </p>
+                                </div>
+                                <label className="flex items-center gap-2 text-sm text-zinc-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={stepQuestionnaireEnabled}
+                                    onChange={(event) =>
+                                      setStepQuestionnaireEnabled(event.target.checked)
+                                    }
+                                  />
+                                  Enable
+                                </label>
+                              </div>
+
+                              {stepQuestionnaireEnabled ? (
+                                <div className="mt-4 space-y-3">
+                                  <textarea
+                                    className="h-24 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                                    value={stepQuestionPrompt}
+                                    onChange={(event) => setStepQuestionPrompt(event.target.value)}
+                                    placeholder="Ask a small completion question"
+                                  />
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    {stepQuestionOptions.map((option, index) => (
+                                      <input
+                                        key={STEP_QUESTION_OPTION_IDS[index]}
+                                        className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                                        value={option}
+                                        onChange={(event) =>
+                                          setStepQuestionOptions((current) =>
+                                            current.map((entry, entryIndex) =>
+                                              entryIndex === index ? event.target.value : entry,
+                                            ),
+                                          )
+                                        }
+                                        placeholder={`Option ${index + 1}`}
+                                      />
+                                    ))}
+                                  </div>
+                                  <div className="grid gap-3 sm:grid-cols-2">
+                                    <label className="grid gap-2 rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                                      <span className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+                                        Correct answer
+                                      </span>
+                                      <select
+                                        className="h-11 rounded-xl border border-white/10 bg-black/40 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                                        value={String(stepQuestionCorrectIndex)}
+                                        onChange={(event) =>
+                                          setStepQuestionCorrectIndex(Number(event.target.value))
+                                        }
+                                      >
+                                        {stepQuestionOptions.map((_, index) => (
+                                          <option key={STEP_QUESTION_OPTION_IDS[index]} value={index}>
+                                            Option {index + 1}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                    <input
+                                      className="h-11 w-full self-end rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                                      value={stepQuestionSuccessMessage}
+                                      onChange={(event) =>
+                                        setStepQuestionSuccessMessage(event.target.value)
+                                      }
+                                      placeholder="Optional success message"
+                                    />
+                                  </div>
+                                  {!isStepQuestionnaireValid ? (
+                                    <p className="text-xs text-amber-300">
+                                      Add a prompt and at least two filled options before saving.
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
                             <Button
                               className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
-                              disabled={!stepTitle.trim() || updateStepMutation.isPending}
+                              disabled={
+                                !stepTitle.trim() ||
+                                !isStepQuestionnaireValid ||
+                                updateStepMutation.isPending
+                              }
                               onClick={() =>
                                 updateStepMutation.mutate({
                                   stepId: selectedCourseStep.id,
@@ -1030,6 +1275,13 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                   metadata: {
                                     coverImageUrl: stepCoverImageUrl.trim(),
                                     content: stepBody,
+                                    questionnaire: buildStepQuestionnaire({
+                                      enabled: stepQuestionnaireEnabled,
+                                      prompt: stepQuestionPrompt,
+                                      options: stepQuestionOptions,
+                                      correctIndex: stepQuestionCorrectIndex,
+                                      successMessage: stepQuestionSuccessMessage,
+                                    }),
                                   },
                                 })
                               }
@@ -1120,6 +1372,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                               <input
                                 type="checkbox"
                                 checked={courseAssetDownloadable}
+                                disabled={!downloadsAllowed}
                                 onChange={(event) =>
                                   setCourseAssetDownloadable(event.target.checked)
                                 }
@@ -1359,6 +1612,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       <input
                         type="checkbox"
                         checked={galleryAssetDownloadable}
+                        disabled={!downloadsAllowed}
                         onChange={(event) =>
                           setGalleryAssetDownloadable(event.target.checked)
                         }

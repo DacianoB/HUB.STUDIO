@@ -12,25 +12,44 @@ export function OverviewDashboard() {
   const productsQuery = api.products.list.useQuery();
   const pagesQuery = api.nodePages.list.useQuery();
   const joinRequestsQuery = api.users.listJoinRequests.useQuery();
+  const currentTenantQuery = api.tenants.current.useQuery(undefined, {
+    retry: false,
+  });
 
   const pendingQueue =
     (joinRequestsQuery.data?.pendingInvites.length ?? 0) +
     (joinRequestsQuery.data?.pendingMemberships.length ?? 0);
+  const productLimitReached =
+    (currentTenantQuery.data?.policy?.maxProducts ?? null) !== null &&
+    (currentTenantQuery.data?.usage.products ?? 0) >=
+      (currentTenantQuery.data?.policy?.maxProducts ?? 0);
 
   return (
     <AdminShell
       title="Admin dashboard"
       description="Manage the full tenant control center from one place: branding, users, pages, and products."
       actions={
-        <Link href="/admin/dashboard/products/new">
+        <Link
+          href={productLimitReached ? "#" : "/admin/dashboard/products/new"}
+          aria-disabled={productLimitReached}
+          onClick={(event) => {
+            if (productLimitReached) event.preventDefault();
+          }}
+        >
           <Button className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400">
             <Plus className="mr-2 h-4 w-4" />
-            New product
+            {productLimitReached ? "Product limit reached" : "New product"}
           </Button>
         </Link>
       }
     >
       <div className="space-y-6">
+        {productLimitReached ? (
+          <div className="rounded-3xl border border-amber-400/20 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+            This tenant is at its configured product limit. Archive an existing product or ask a
+            global admin to raise the cap.
+          </div>
+        ) : null}
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {[
             {

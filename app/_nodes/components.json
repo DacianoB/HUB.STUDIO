@@ -87,6 +87,50 @@
       "minH": 6
     }
   },
+  "node-step-viewer": {
+    "name": "Step Viewer",
+    "description": "Expandable course step timeline with locks, content, and completion questions.",
+    "tags": [
+      "course",
+      "steps",
+      "timeline",
+      "questionnaire",
+      "viewer"
+    ],
+    "defaultLayout": {
+      "w": [
+        5
+      ],
+      "h": [
+        18,
+        22
+      ],
+      "minW": 2,
+      "minH": 12
+    }
+  },
+  "step-viewer": {
+    "name": "Step Viewer",
+    "description": "Expandable course step timeline with locks, content, and completion questions.",
+    "tags": [
+      "course",
+      "steps",
+      "timeline",
+      "questionnaire",
+      "viewer"
+    ],
+    "defaultLayout": {
+      "w": [
+        5
+      ],
+      "h": [
+        18,
+        22
+      ],
+      "minW": 2,
+      "minH": 12
+    }
+  },
   "node-text": {
     "name": "Text Node",
     "description": "Structured title and subtitle block with separate styling and variable support.",

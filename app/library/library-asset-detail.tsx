@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { ReactNode } from 'react';
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
@@ -58,6 +58,8 @@ type InitialAssetData = {
 };
 
 const LIBRARY_VISITOR_TOKEN_KEY = 'hub.libraryVisitorToken';
+const ZOOM_LEVELS = [1, 1.75, 2.35, 3.1] as const;
+const MOBILE_DOUBLE_TAP_STEP = 2;
 
 function readMetadata(metadata: unknown): AssetMetadata {
   if (!metadata || typeof metadata !== 'object') return {};
@@ -102,8 +104,26 @@ export function LibraryAssetDetailPanel({
   const router = useRouter();
   const utils = api.useUtils();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isClient, setIsClient] = useState(false);
-  const [isZoomed, setIsZoomed] = useState(false);
+  const [zoomStep, setZoomStep] = useState(0);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const zoomViewportRef = useRef<HTMLButtonElement | null>(null);
+  const activePointerIdRef = useRef<number | null>(null);
+  const lastPointerTypeRef = useRef<string | null>(null);
+  const dragSessionRef = useRef<{
+    pointerId: number;
+    pointerType: string;
+    startX: number;
+    startY: number;
+    startPanX: number;
+    startPanY: number;
+    moved: boolean;
+  } | null>(null);
+  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTouchTapRef = useRef<{
+    time: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const [visitorToken, setVisitorToken] = useState<string | undefined>(() => {
     if (typeof window === 'undefined') return undefined;
     const stored = window.localStorage.getItem(LIBRARY_VISITOR_TOKEN_KEY);
@@ -168,14 +188,19 @@ export function LibraryAssetDetailPanel({
   });
 
   useEffect(() => {
-    setIsClient(true);
-  }, []);
-
-  useEffect(() => {
     if (!isExpanded) {
-      setIsZoomed(false);
+      activePointerIdRef.current = null;
+      dragSessionRef.current = null;
     }
   }, [isExpanded]);
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const asset = trackedAsset;
@@ -250,6 +275,272 @@ export function LibraryAssetDetailPanel({
     showViews ? `${asset.stats?.views ?? 0} views` : null,
     showDownloads ? `${asset.stats?.downloads ?? 0} downloads` : null
   ].filter(Boolean);
+
+  const isZoomed = zoomStep > 0;
+  const zoomScale = ZOOM_LEVELS[zoomStep] ?? 1;
+
+  const getPanBounds = (scale: number) => {
+    const container = zoomViewportRef.current;
+    if (!container) {
+      return { maxX: 0, maxY: 0 };
+    }
+
+    const bounds = container.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) {
+      return { maxX: 0, maxY: 0 };
+    }
+
+    return {
+      maxX: Math.max(0, ((scale - 1) * bounds.width) / 2),
+      maxY: Math.max(0, ((scale - 1) * bounds.height) / 2)
+    };
+  };
+
+  const clampPan = (x: number, y: number, scale: number) => {
+    const { maxX, maxY } = getPanBounds(scale);
+    return {
+      x: Math.min(maxX, Math.max(-maxX, x)),
+      y: Math.min(maxY, Math.max(-maxY, y))
+    };
+  };
+
+  const resetZoomState = () => {
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
+
+    lastTouchTapRef.current = null;
+    activePointerIdRef.current = null;
+    dragSessionRef.current = null;
+    setPanOffset({ x: 0, y: 0 });
+    setZoomStep(0);
+  };
+
+  const closeExpandedModal = () => {
+    resetZoomState();
+    setIsExpanded(false);
+  };
+
+  const updateZoomStep = (
+    nextStep: number,
+    clientX?: number,
+    clientY?: number
+  ) => {
+    const boundedStep = Math.min(Math.max(nextStep, 0), ZOOM_LEVELS.length - 1);
+    const nextScale = ZOOM_LEVELS[boundedStep] ?? 1;
+
+    if (
+      clientX === undefined ||
+      clientY === undefined ||
+      !zoomViewportRef.current
+    ) {
+      setZoomStep(boundedStep);
+      setPanOffset((current) => clampPan(current.x, current.y, nextScale));
+      return;
+    }
+
+    const bounds = zoomViewportRef.current.getBoundingClientRect();
+    const relativeX = (clientX - bounds.left) / bounds.width - 0.5;
+    const relativeY = (clientY - bounds.top) / bounds.height - 0.5;
+    const nextPan = clampPan(
+      -relativeX * bounds.width * (nextScale - 1),
+      -relativeY * bounds.height * (nextScale - 1),
+      nextScale
+    );
+
+    setZoomStep(boundedStep);
+    setPanOffset(nextPan);
+  };
+
+  const zoomIn = (clientX?: number, clientY?: number) => {
+    updateZoomStep(zoomStep + 1, clientX, clientY);
+  };
+
+  const zoomOut = (clientX?: number, clientY?: number) => {
+    updateZoomStep(zoomStep - 1, clientX, clientY);
+  };
+
+  const handleSingleActivation = (clientX?: number, clientY?: number) => {
+    if (zoomStep < ZOOM_LEVELS.length - 1) {
+      zoomIn(clientX, clientY);
+      return;
+    }
+
+    if (clientX === undefined || clientY === undefined) {
+      return;
+    }
+
+    const bounds = zoomViewportRef.current?.getBoundingClientRect();
+    if (!bounds) {
+      return;
+    }
+
+    const relativeX = clientX - (bounds.left + bounds.width / 2);
+    const relativeY = clientY - (bounds.top + bounds.height / 2);
+    setPanOffset((current) =>
+      clampPan(current.x - relativeX * 0.35, current.y - relativeY * 0.35, zoomScale)
+    );
+  };
+
+  const scheduleMouseClickZoom = (clientX: number, clientY: number) => {
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+    }
+
+    clickTimeoutRef.current = setTimeout(() => {
+      handleSingleActivation(clientX, clientY);
+      clickTimeoutRef.current = null;
+    }, 220);
+  };
+
+  const handleTouchTap = (clientX: number, clientY: number) => {
+    const now = Date.now();
+    const lastTap = lastTouchTapRef.current;
+
+    if (
+      lastTap &&
+      now - lastTap.time < 280 &&
+      Math.abs(lastTap.x - clientX) < 24 &&
+      Math.abs(lastTap.y - clientY) < 24
+    ) {
+      lastTouchTapRef.current = null;
+      if (isZoomed) {
+        resetZoomState();
+      } else {
+        updateZoomStep(MOBILE_DOUBLE_TAP_STEP, clientX, clientY);
+      }
+      return;
+    }
+
+    lastTouchTapRef.current = { time: now, x: clientX, y: clientY };
+  };
+
+  const toggleZoom = () => {
+    if (isZoomed) {
+      resetZoomState();
+      return;
+    }
+
+    updateZoomStep(1);
+  };
+
+  const releasePointerCapture = (
+    target: HTMLButtonElement,
+    pointerId: number
+  ) => {
+    if (target.hasPointerCapture(pointerId)) {
+      target.releasePointerCapture(pointerId);
+    }
+  };
+
+  const finishPointer = (
+    target: HTMLButtonElement,
+    pointerId: number,
+    clientX: number,
+    clientY: number
+  ) => {
+    const session = dragSessionRef.current;
+    if (activePointerIdRef.current === pointerId) {
+      activePointerIdRef.current = null;
+      releasePointerCapture(target, pointerId);
+    }
+
+    dragSessionRef.current = null;
+
+    if (!session || session.pointerId !== pointerId || session.moved) {
+      return;
+    }
+
+    if (session.pointerType === 'touch') {
+      handleTouchTap(clientX, clientY);
+      return;
+    }
+
+    if (session.pointerType !== 'mouse') {
+      handleSingleActivation(clientX, clientY);
+    }
+  };
+
+  const handlePointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => {
+    activePointerIdRef.current = event.pointerId;
+    lastPointerTypeRef.current = event.pointerType;
+    dragSessionRef.current = {
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      startX: event.clientX,
+      startY: event.clientY,
+      startPanX: panOffset.x,
+      startPanY: panOffset.y,
+      moved: false
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePointerMove = (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => {
+    const session = dragSessionRef.current;
+    if (
+      !session ||
+      session.pointerId !== event.pointerId ||
+      !isZoomed ||
+      session.pointerType === 'mouse'
+    ) {
+      return;
+    }
+
+    const deltaX = event.clientX - session.startX;
+    const deltaY = event.clientY - session.startY;
+    if (Math.abs(deltaX) > 6 || Math.abs(deltaY) > 6) {
+      session.moved = true;
+    }
+
+    setPanOffset(
+      clampPan(session.startPanX + deltaX, session.startPanY + deltaY, zoomScale)
+    );
+  };
+
+  const handlePointerUp = (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => {
+    finishPointer(
+      event.currentTarget,
+      event.pointerId,
+      event.clientX,
+      event.clientY
+    );
+  };
+
+  const handlePointerCancel = (
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => {
+    if (activePointerIdRef.current === event.pointerId) {
+      activePointerIdRef.current = null;
+      releasePointerCapture(event.currentTarget, event.pointerId);
+      dragSessionRef.current = null;
+    }
+  };
+
+  const handleMouseMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!isZoomed || event.pointerType !== 'mouse' || !zoomViewportRef.current) {
+      return;
+    }
+
+    const bounds = zoomViewportRef.current.getBoundingClientRect();
+    const relativeX = (event.clientX - bounds.left) / bounds.width - 0.5;
+    const relativeY = (event.clientY - bounds.top) / bounds.height - 0.5;
+
+    setPanOffset(
+      clampPan(
+        -relativeX * bounds.width * (zoomScale - 1),
+        -relativeY * bounds.height * (zoomScale - 1),
+        zoomScale
+      )
+    );
+  };
 
   if (inGrid) {
     return (
@@ -443,7 +734,7 @@ export function LibraryAssetDetailPanel({
           </div>
         </div>
 
-        {isClient && asset.type === 'IMAGE'
+        {typeof document !== 'undefined' && asset.type === 'IMAGE'
           ? createPortal(
               <AnimatePresence>
                 {isExpanded ? (
@@ -458,7 +749,7 @@ export function LibraryAssetDetailPanel({
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      onClick={() => setIsExpanded(false)}
+                      onClick={closeExpandedModal}
                     />
 
                     <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.04)_50%,transparent_100%)] opacity-40" />
@@ -466,21 +757,21 @@ export function LibraryAssetDetailPanel({
                     <div className="absolute left-1/2 top-5 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-black/45 px-3 py-2 text-xs font-medium text-white/75 backdrop-blur-xl">
                       <button
                         type="button"
-                        onClick={() => setIsZoomed((current) => !current)}
+                        onClick={toggleZoom}
                         className="inline-flex items-center rounded-full bg-white/8 px-3 py-1.5 text-white transition hover:bg-white/14"
                       >
                         {isZoomed ? 'Fit' : 'Zoom'}
                       </button>
                       <span className="hidden sm:inline">
                         {isZoomed
-                          ? 'Click image to reset zoom'
+                          ? 'Desktop follows the cursor. On mobile, drag and double tap to fit.'
                           : 'Click image to zoom in'}
                       </span>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => setIsExpanded(false)}
+                      onClick={closeExpandedModal}
                       className="absolute right-5 top-5 z-10 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white backdrop-blur-xl transition hover:bg-white/10"
                       aria-label="Close expanded image"
                     >
@@ -500,10 +791,34 @@ export function LibraryAssetDetailPanel({
                         onClick={(event) => event.stopPropagation()}
                       >
                         <motion.button
+                          ref={zoomViewportRef}
                           type="button"
-                          onClick={() => setIsZoomed((current) => !current)}
+                          onClick={(event) => {
+                            if (event.detail > 1) {
+                              return;
+                            }
+
+                            if (lastPointerTypeRef.current === 'mouse') {
+                              scheduleMouseClickZoom(event.clientX, event.clientY);
+                            }
+                          }}
+                          onDoubleClick={(event) => {
+                            if (clickTimeoutRef.current) {
+                              clearTimeout(clickTimeoutRef.current);
+                              clickTimeoutRef.current = null;
+                            }
+
+                            zoomOut(event.clientX, event.clientY);
+                          }}
+                          onPointerDown={handlePointerDown}
+                          onPointerMove={(event) => {
+                            handlePointerMove(event);
+                            handleMouseMove(event);
+                          }}
+                          onPointerUp={handlePointerUp}
+                          onPointerCancel={handlePointerCancel}
                           animate={{
-                            cursor: isZoomed ? 'zoom-out' : 'zoom-in'
+                            cursor: isZoomed ? 'grab' : 'zoom-in'
                           }}
                           transition={{
                             type: 'spring',
@@ -511,10 +826,17 @@ export function LibraryAssetDetailPanel({
                             damping: 24
                           }}
                           className="group relative flex h-[88vh] w-[min(92vw,1440px)] items-center justify-center overflow-hidden rounded-[28px] border border-white/10 bg-[#050505] shadow-[0_40px_120px_rgba(0,0,0,0.75)]"
+                          style={{
+                            touchAction: isZoomed ? 'none' : 'auto'
+                          }}
                         >
                           <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_20%,transparent_80%,rgba(255,255,255,0.03))]" />
                           <motion.div
-                            animate={{ scale: isZoomed ? 1.55 : 1 }}
+                            animate={{
+                              scale: zoomScale,
+                              x: panOffset.x,
+                              y: panOffset.y
+                            }}
                             transition={{
                               type: 'spring',
                               stiffness: 220,
@@ -528,7 +850,7 @@ export function LibraryAssetDetailPanel({
                               width={2400}
                               height={2400}
                               unoptimized
-                              className="max-h-[82vh] w-auto max-w-[88vw] object-contain"
+                              className="h-auto max-h-[86dvh] w-auto max-w-[92vw] object-contain sm:max-h-[82vh] sm:max-w-[88vw]"
                             />
                           </motion.div>
                         </motion.button>

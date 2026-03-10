@@ -2777,6 +2777,31 @@ export function ProductBuilderDashboard() {
                   >
                     Add course step node
                   </button>
+                  <button
+                    className="h-9 rounded bg-emerald-400 text-xs font-semibold text-black disabled:opacity-50 md:col-span-3"
+                    onClick={() =>
+                      addNodeMutation.mutate({
+                        pageId: selectedPage.id,
+                        nodeKey: `step-viewer-node-${Date.now()}`,
+                        type: 'node-step-viewer',
+                        productId: selectedProductForNode || undefined,
+                        props: {
+                          productId: selectedProductForNode,
+                          title: 'Course steps'
+                        },
+                        position: {
+                          xs: { x: 0, y: 0, w: 2, h: 18 },
+                          sm: { x: 0, y: 0, w: 3, h: 18 },
+                          lg: { x: 0, y: 0, w: 5, h: 18 }
+                        },
+                        sortOrder: Number(nodeSortOrder || '0') + 2
+                      })
+                    }
+                    disabled={!selectedProductForNode || addNodeMutation.isPending}
+                    type="button"
+                  >
+                    Add step viewer node
+                  </button>
                 </div>
 
                 <div className="mt-2 grid gap-2 md:grid-cols-2">

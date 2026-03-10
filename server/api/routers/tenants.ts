@@ -13,6 +13,17 @@ import {
   tenantProcedure,
 } from "~/server/api/trpc";
 import { isSupportedAssetUrl } from "~/server/uploads";
+import {
+  assertActiveMemberCapacity,
+  assertOutstandingInviteCapacity,
+  defaultTenantPolicyData,
+  defaultTenantPolicyUncheckedData,
+  ensureTenantPolicy,
+  getTenantPolicySnapshot,
+  getTenantUsageCounters,
+  isJoinModeOpen,
+  tenantPolicySelect,
+} from "~/server/tenant-policy";
 
 const slugSchema = z
   .string()
@@ -33,10 +44,51 @@ const tenantThemeSchema = z.object({
   cardBg: z.string().min(4).max(32),
 });
 
+const tenantJoinModeSchema = z.enum([
+  "INVITE_ONLY",
+  "OPEN_AUTO_APPROVE",
+  "OPEN_REQUEST_APPROVAL",
+]);
+const productTypeSchema = z.enum([
+  "COURSE",
+  "PHYSICAL_PRODUCT",
+  "DIGITAL_PRODUCT",
+  "SERVICE",
+  "CUSTOM",
+]);
+const moduleTypeSchema = z.enum(["LIBRARY", "COURSE"]);
+
+const tenantPolicyInputSchema = z.object({
+  joinMode: tenantJoinModeSchema,
+  maxOutstandingInvites: z.number().int().min(0).nullable(),
+  maxActiveMembers: z.number().int().min(0).nullable(),
+  maxProducts: z.number().int().min(0).nullable(),
+  maxPages: z.number().int().min(0).nullable(),
+  allowedProductTypes: z.array(productTypeSchema),
+  allowPaidProducts: z.boolean(),
+  allowDownloads: z.boolean(),
+  allowSequentialCourses: z.boolean(),
+  allowDemoCourseContent: z.boolean(),
+  allowPublicPages: z.boolean(),
+  allowHiddenPages: z.boolean(),
+  allowIndexablePages: z.boolean(),
+  allowInternalRoutePages: z.boolean(),
+  allowUserEditablePages: z.boolean(),
+  allowBrandingEditor: z.boolean(),
+});
+
 function readTenantSettings(settings: unknown) {
   return settings && typeof settings === "object"
     ? (settings as Record<string, unknown>)
     : {};
+}
+
+function isOutstandingInvite(invitation?: {
+  acceptedByUserId?: string | null;
+  status?: "PENDING" | "ACTIVE" | "BLOCKED";
+} | null) {
+  if (!invitation) return false;
+  return !invitation.acceptedByUserId && (invitation.status === "PENDING" || invitation.status === "ACTIVE");
 }
 
 export const tenantsRouter = createTRPCRouter({
@@ -80,6 +132,9 @@ export const tenantsRouter = createTRPCRouter({
               role: "OWNER",
               status: "ACTIVE",
             },
+          },
+          policy: {
+            create: defaultTenantPolicyData(input.isOpen),
           },
         },
       });
@@ -149,11 +204,71 @@ export const tenantsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const tenant = await ctx.db.tenant.findUnique({
         where: { slug: input.slug },
+        include: {
+          policy: {
+            select: tenantPolicySelect,
+          },
+        },
       });
       if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
-      if (!tenant.isOpen) {
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      const existingMembership = await ctx.db.tenantMembership.findUnique({
+        where: {
+          tenantId_userId: {
+            tenantId: tenant.id,
+            userId: ctx.session!.user.id,
+          },
+        },
+      });
+
+      if (existingMembership?.status === "ACTIVE") {
+        await ctx.db.session.updateMany({
+          where: { userId: ctx.session!.user.id },
+          data: { activeTenantId: tenant.id },
+        });
+
+        return { tenant, membership: existingMembership, note: null };
+      }
+
+      if (policy.joinMode === "INVITE_ONLY") {
         throw new TRPCError({ code: "FORBIDDEN", message: "Tenant is invite-only." });
       }
+
+      if (policy.joinMode === "OPEN_REQUEST_APPROVAL") {
+        const membership = await ctx.db.tenantMembership.upsert({
+          where: {
+            tenantId_userId: {
+              tenantId: tenant.id,
+              userId: ctx.session!.user.id,
+            },
+          },
+          update: {
+            status: "PENDING",
+            role: existingMembership?.role ?? "MEMBER",
+          },
+          create: {
+            tenantId: tenant.id,
+            userId: ctx.session!.user.id,
+            role: "MEMBER",
+            status: "PENDING",
+          },
+        });
+
+        return {
+          tenant,
+          membership,
+          note: "Join request submitted. A tenant admin needs to approve it.",
+        };
+      }
+
+      await assertActiveMemberCapacity(
+        ctx.db,
+        tenant.id,
+        policy,
+        existingMembership?.status,
+      );
 
       const membership = await ctx.db.tenantMembership.upsert({
         where: {
@@ -182,10 +297,11 @@ export const tenantsRouter = createTRPCRouter({
         },
       });
 
-      return { tenant, membership };
+      return { tenant, membership, note: null };
     }),
 
   current: tenantProcedure.query(async ({ ctx }) => {
+    const snapshot = await getTenantPolicySnapshot(ctx.db, ctx.tenantId);
     const tenant = await ctx.db.tenant.findUnique({
       where: { id: ctx.tenantId },
     });
@@ -193,6 +309,8 @@ export const tenantsRouter = createTRPCRouter({
     return {
       tenant,
       role: ctx.tenantRole,
+      policy: snapshot.policy,
+      usage: snapshot.usage,
     };
   }),
 
@@ -201,8 +319,22 @@ export const tenantsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
+        include: {
+          policy: {
+            select: tenantPolicySelect,
+          },
+        },
       });
       if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      if (!policy.allowBrandingEditor) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Branding edits are disabled for this tenant.",
+        });
+      }
 
       const settings = readTenantSettings(tenant.settings);
 
@@ -231,8 +363,22 @@ export const tenantsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
+        include: {
+          policy: {
+            select: tenantPolicySelect,
+          },
+        },
       });
       if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
+      if (!policy.allowBrandingEditor) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Branding edits are disabled for this tenant.",
+        });
+      }
 
       const settings = readTenantSettings(tenant.settings);
       const logoUrl = input.logoUrl?.trim() || null;
@@ -261,7 +407,7 @@ export const tenantsRouter = createTRPCRouter({
     }),
 
   listAll: globalAdminProcedure.query(async ({ ctx }) => {
-    return ctx.db.tenant.findMany({
+    const tenants = await ctx.db.tenant.findMany({
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -269,15 +415,117 @@ export const tenantsRouter = createTRPCRouter({
         name: true,
         isOpen: true,
         createdAt: true,
-        _count: {
-          select: {
-            memberships: true,
-            products: true,
-          },
+        policy: {
+          select: tenantPolicySelect,
         },
       },
     });
+
+    return Promise.all(
+      tenants.map(async (tenant) => ({
+        ...tenant,
+        policy:
+          tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen)),
+        usage: await getTenantUsageCounters(ctx.db, tenant.id),
+      })),
+    );
   }),
+
+  getPolicyEditor: globalAdminProcedure
+    .input(
+      z.object({
+        tenantId: z.string().cuid(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const snapshot = await getTenantPolicySnapshot(ctx.db, input.tenantId);
+      const moduleCapabilities = await ctx.db.tenantModuleCapability.findMany({
+        where: { tenantId: input.tenantId },
+        orderBy: { moduleType: "asc" },
+      });
+
+      return {
+        ...snapshot,
+        moduleCapabilities,
+      };
+    }),
+
+  updatePolicy: globalAdminProcedure
+    .input(
+      z.object({
+        tenantId: z.string().cuid(),
+        policy: tenantPolicyInputSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await ctx.db.tenant.findUnique({
+        where: { id: input.tenantId },
+        select: {
+          id: true,
+          isOpen: true,
+        },
+      });
+      if (!tenant) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Tenant not found.",
+        });
+      }
+
+      const policy = await ctx.db.tenantPolicy.upsert({
+        where: { tenantId: input.tenantId },
+        update: {
+          ...input.policy,
+        },
+        create: {
+          ...defaultTenantPolicyUncheckedData(input.tenantId, tenant.isOpen),
+          ...input.policy,
+        },
+        select: tenantPolicySelect,
+      });
+
+      await ctx.db.tenant.update({
+        where: { id: input.tenantId },
+        data: {
+          isOpen: isJoinModeOpen(policy.joinMode),
+        },
+      });
+
+      return {
+        policy,
+        usage: await getTenantUsageCounters(ctx.db, input.tenantId),
+      };
+    }),
+
+  updateModuleCapability: globalAdminProcedure
+    .input(
+      z.object({
+        tenantId: z.string().cuid(),
+        moduleType: moduleTypeSchema,
+        isEnabled: z.boolean(),
+        settings: z.record(z.string(), z.any()).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.tenantModuleCapability.upsert({
+        where: {
+          tenantId_moduleType: {
+            tenantId: input.tenantId,
+            moduleType: input.moduleType,
+          },
+        },
+        update: {
+          isEnabled: input.isEnabled,
+          settings: input.settings,
+        },
+        create: {
+          tenantId: input.tenantId,
+          moduleType: input.moduleType,
+          isEnabled: input.isEnabled,
+          settings: input.settings,
+        },
+      });
+    }),
 
   inviteByEmail: tenantAdminProcedure
     .input(
@@ -287,7 +535,34 @@ export const tenantsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const tenant = await ctx.db.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: {
+          id: true,
+          isOpen: true,
+          policy: {
+            select: tenantPolicySelect,
+          },
+        },
+      });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
       const normalizedEmail = input.email.trim().toLowerCase();
+      const existingInvite = await ctx.db.tenantInvitation.findUnique({
+        where: {
+          tenantId_email: {
+            tenantId: ctx.tenantId,
+            email: normalizedEmail,
+          },
+        },
+      });
+
+      if (!isOutstandingInvite(existingInvite)) {
+        await assertOutstandingInviteCapacity(ctx.db, ctx.tenantId, policy);
+      }
+
       const invitation = await ctx.db.tenantInvitation.upsert({
         where: {
           tenantId_email: {
@@ -299,6 +574,7 @@ export const tenantsRouter = createTRPCRouter({
           role: input.role,
           status: "PENDING",
           invitedByUserId: ctx.session!.user.id,
+          acceptedByUserId: null,
         },
         create: {
           tenantId: ctx.tenantId,
@@ -326,10 +602,36 @@ export const tenantsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const tenant = await ctx.db.tenant.findUnique({
+        where: { id: ctx.tenantId },
+        select: {
+          id: true,
+          isOpen: true,
+          policy: {
+            select: tenantPolicySelect,
+          },
+        },
+      });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+
+      const policy =
+        tenant.policy ?? (await ensureTenantPolicy(ctx.db, tenant.id, tenant.isOpen));
       const normalizedEmail = input.email.trim().toLowerCase();
       const user = await ctx.db.user.findUnique({
         where: { email: normalizedEmail },
       });
+      const existingInvite = await ctx.db.tenantInvitation.findUnique({
+        where: {
+          tenantId_email: {
+            tenantId: ctx.tenantId,
+            email: normalizedEmail,
+          },
+        },
+      });
+
+      if (!isOutstandingInvite(existingInvite)) {
+        await assertOutstandingInviteCapacity(ctx.db, ctx.tenantId, policy);
+      }
 
       const invitation = await ctx.db.tenantInvitation.upsert({
         where: {
@@ -361,6 +663,21 @@ export const tenantsRouter = createTRPCRouter({
           note: "Invite unlocked. Membership will be created after first login.",
         };
       }
+
+      const existingMembership = await ctx.db.tenantMembership.findUnique({
+        where: {
+          tenantId_userId: {
+            tenantId: ctx.tenantId,
+            userId: user.id,
+          },
+        },
+      });
+      await assertActiveMemberCapacity(
+        ctx.db,
+        ctx.tenantId,
+        policy,
+        existingMembership?.status,
+      );
 
       const membership = await ctx.db.tenantMembership.upsert({
         where: {

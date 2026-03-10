@@ -42,6 +42,13 @@ function formatProductPrice(product: {
 
 export function ProductListDashboard({ embedded = false }: { embedded?: boolean }) {
   const productsQuery = api.products.list.useQuery();
+  const currentTenantQuery = api.tenants.current.useQuery(undefined, {
+    retry: false,
+  });
+  const productLimitReached =
+    (currentTenantQuery.data?.policy?.maxProducts ?? null) !== null &&
+    (currentTenantQuery.data?.usage.products ?? 0) >=
+      (currentTenantQuery.data?.policy?.maxProducts ?? 0);
 
   const content = (
     <div className="space-y-6">
@@ -64,13 +71,25 @@ export function ProductListDashboard({ embedded = false }: { embedded?: boolean 
               </div>
             </div>
 
-            <Link href="/admin/dashboard/products/new">
+            <Link
+              href={productLimitReached ? "#" : "/admin/dashboard/products/new"}
+              aria-disabled={productLimitReached}
+              onClick={(event) => {
+                if (productLimitReached) event.preventDefault();
+              }}
+            >
               <Button className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400">
                 <Plus className="mr-2 h-4 w-4" />
-                Create product
+                {productLimitReached ? "Product limit reached" : "Create product"}
               </Button>
             </Link>
           </div>
+          {productLimitReached ? (
+            <p className="text-sm text-amber-200">
+              This tenant is at its configured product limit. Archive an existing product or ask
+              a global admin to raise the cap.
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -136,10 +155,17 @@ export function ProductListDashboard({ embedded = false }: { embedded?: boolean 
                 Create the first product and then configure its plugins on its own editor
                 page.
               </p>
-              <Link href="/admin/dashboard/products/new" className="mt-6 inline-flex">
+              <Link
+                href={productLimitReached ? "#" : "/admin/dashboard/products/new"}
+                className="mt-6 inline-flex"
+                aria-disabled={productLimitReached}
+                onClick={(event) => {
+                  if (productLimitReached) event.preventDefault();
+                }}
+              >
                 <Button className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400">
                   <Plus className="mr-2 h-4 w-4" />
-                  Create first product
+                  {productLimitReached ? "Product limit reached" : "Create first product"}
                 </Button>
               </Link>
             </div>
