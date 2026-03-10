@@ -1,8 +1,21 @@
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from '@sentry/nextjs';
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   typedRoutes: true,
+  turbopack: {
+    resolveAlias: {
+      "ioredis/built/utils": "ioredis/built/utils/index.js",
+    },
+  },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.resolve.alias["ioredis/built/utils"] =
+        "ioredis/built/utils/index.js";
+    }
+
+    return config;
+  },
 };
 
 export default withSentryConfig(nextConfig, {
@@ -11,7 +24,7 @@ export default withSentryConfig(nextConfig, {
   silent: true,
   webpack: {
     treeshake: {
-      removeDebugLogging: true,
-    },
-  },
+      removeDebugLogging: true
+    }
+  }
 });

@@ -230,6 +230,30 @@ export const productsRouter = createTRPCRouter({
       return product;
     }),
 
+  libraryAssetsByProductId: publicTenantProcedure
+    .input(z.object({ productId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const product = await ctx.db.product.findFirst({
+        where: { id: input.productId, tenantId: ctx.tenantId },
+        select: {
+          id: true,
+          assets: {
+            orderBy: { sortOrder: "asc" },
+          },
+        },
+      });
+      if (!product) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
+      }
+
+      return (product.assets as Array<Record<string, unknown>>).filter((asset) => {
+        if (asset.stepId) return false;
+        if (asset.moduleType === "COURSE") return false;
+        if (asset.placement === "STEP") return false;
+        return true;
+      });
+    }),
+
   libraryAssetById: publicTenantProcedure
     .input(
       z.object({

@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FileText, Film, Link2 } from "lucide-react";
+
+import HoverPlayCard from "~/components/ui/hover-play-card";
 
 type LibraryAssetSnapshot = {
   id?: string;
@@ -14,13 +17,13 @@ type LibraryAssetSnapshot = {
   thumbnailUrl?: string | null;
 };
 
-function normalizeSlug(slug: string) {
-  return slug.replace(/^\/+|\/+$/g, "");
-}
-
 type DashboardNodeLibraryAssetItemProps = {
   props?: Record<string, unknown>;
 };
+
+function normalizeSlug(slug: string) {
+  return slug.replace(/^\/+|\/+$/g, "");
+}
 
 function readAsset(props?: Record<string, unknown>): LibraryAssetSnapshot | null {
   const candidate = props?.asset;
@@ -51,19 +54,39 @@ function AssetIcon({ type }: { type?: string }) {
 export function DashboardNodeLibraryAssetItem({
   props,
 }: DashboardNodeLibraryAssetItemProps) {
+  const router = useRouter();
   const asset = readAsset(props);
   const preview = readPreview(asset);
   const sourcePageSlug = readSourcePageSlug(props);
   const linkHref =
     asset?.type === "LINK"
       ? (asset.targetUrl?.trim() || asset.url?.trim() || "#")
-      : asset?.id && sourcePageSlug
-        ? `/${sourcePageSlug}/${asset.id}`
+      : asset?.id
+        ? `/${[sourcePageSlug, "g", asset.id].filter(Boolean).join("/")}`
         : "#";
   const opensInNewTab = asset?.type === "LINK" ? (asset.openInNewTab ?? true) : false;
 
   if (!asset) {
     return <div className="h-full w-full rounded-xl bg-zinc-950/80" />;
+  }
+
+  if (asset.type === "VIDEO" && asset.url) {
+    return (
+      <HoverPlayCard
+        src={asset.url}
+        poster={preview ?? undefined}
+        title={asset.title}
+        className="h-full w-full"
+        onOpen={() => {
+          if (opensInNewTab) {
+            window.open(linkHref, "_blank", "noopener,noreferrer");
+            return;
+          }
+
+          void router.push(linkHref as any);
+        }}
+      />
+    );
   }
 
   return (

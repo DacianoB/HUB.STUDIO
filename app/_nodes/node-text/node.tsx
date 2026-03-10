@@ -198,7 +198,7 @@ export function DashboardNodeText({ props }: DashboardNodeTextProps) {
   };
 
   return (
-    <article className="p-6">
+    <article className="px-4 h-full">
       <div className="flex h-full w-full flex-col justify-center gap-2">
         <div className="break-words text-balance" style={titleStyle}>
           {renderedTitle}

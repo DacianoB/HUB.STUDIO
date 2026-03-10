@@ -165,21 +165,69 @@ export async function resolveTenantLibraryAssetRoute(
   session: Session | null,
   inputSlug: string,
 ) {
-  const tenantId = session?.user?.activeTenantId;
-  if (!tenantId) return null;
-
   const normalized = normalizeSlug(inputSlug);
   const segments = normalized.split("/").filter(Boolean);
-  if (segments.length < 2) return null;
-
-  const assetId = segments[segments.length - 1] ?? "";
-  const requestedPageSlug = segments.slice(0, -1).join("/");
+  const markerIndex =
+    segments.length >= 2 && (segments[segments.length - 2] === "g" || segments[segments.length - 2] === "lib")
+      ? segments.length - 2
+      : -1;
+  const isScopedGalleryRoute = markerIndex >= 0;
   const isLegacyGalleryRoute = segments[0] === "galeria";
+  const assetId = isScopedGalleryRoute
+    ? (segments[segments.length - 1] ?? "")
+    : (segments[segments.length - 1] ?? "");
+  const requestedPageSlug = isScopedGalleryRoute
+    ? segments.slice(0, markerIndex).join("/")
+    : segments.slice(0, -1).join("/");
+
+  if ((!isScopedGalleryRoute && !isLegacyGalleryRoute && segments.length < 2) || !assetId) {
+    return null;
+  }
+
+  const asset = await db.productAsset.findFirst({
+    where: {
+      id: assetId,
+      stepId: null,
+      tenantId: session?.user?.activeTenantId ?? undefined,
+    },
+    include: {
+      product: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+        },
+      },
+    },
+  });
   if (!assetId) return null;
+  if (!asset) {
+    if (session?.user?.activeTenantId) return null;
+  }
+
+  const fallbackAsset =
+    asset ??
+    (await db.productAsset.findFirst({
+      where: {
+        id: assetId,
+        stepId: null,
+      },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+      },
+    }));
+
+  if (!fallbackAsset) return null;
 
   const candidatePages = await db.tenantNodePage.findMany({
     where: {
-      tenantId,
+      tenantId: fallbackAsset.tenantId,
     },
     include: {
       items: true,
@@ -191,9 +239,13 @@ export async function resolveTenantLibraryAssetRoute(
   let matchedPage = null as (typeof candidatePages)[number] | null;
   for (const page of candidatePages) {
     if (
+      !isScopedGalleryRoute &&
       !isLegacyGalleryRoute &&
       normalizeSlug(page.slug) !== requestedPageSlug
     ) {
+      continue;
+    }
+    if (isScopedGalleryRoute && normalizeSlug(page.slug) !== requestedPageSlug) {
       continue;
     }
 
@@ -213,7 +265,11 @@ export async function resolveTenantLibraryAssetRoute(
         typeof props.productId === "string"
           ? props.productId
           : node.productId ?? null;
-      if (hasAsset && productId) {
+      if (
+        productId &&
+        productId === fallbackAsset.productId &&
+        (isScopedGalleryRoute || hasAsset || isLegacyGalleryRoute)
+      ) {
         matchedProductId = productId;
         matchedPage = page;
         break;
@@ -224,32 +280,13 @@ export async function resolveTenantLibraryAssetRoute(
 
   if (!matchedProductId || !matchedPage) return null;
 
-  const asset = await db.productAsset.findFirst({
-    where: {
-      tenantId,
-      id: assetId,
-      productId: matchedProductId,
-    },
-    include: {
-      product: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-        },
-      },
-    },
-  });
-
-  if (!asset) return null;
-
   const canonicalPageSlug = normalizeSlug(matchedPage.slug);
-  const canonicalSlug = [canonicalPageSlug, assetId].filter(Boolean).join("/");
+  const canonicalSlug = [canonicalPageSlug, "g", assetId].filter(Boolean).join("/");
 
   return {
     pageSlug: canonicalPageSlug,
     canonicalSlug,
-    isLegacyGalleryRoute,
+    isLegacyGalleryRoute: isLegacyGalleryRoute,
     pageName: matchedPage.name,
     sourcePageSlug: matchedPage.slug,
     requiresAuth: matchedPage.requiresAuth,
