@@ -1,128 +1,209 @@
-"use client";
+'use client';
 
-import { type CSSProperties } from "react";
+import { type CSSProperties } from 'react';
 
-import { api } from "~/trpc/react";
+import { api } from '~/trpc/react';
 
 type DashboardNodeTextProps = {
   props?: Record<string, unknown>;
 };
 
-type TextVariableSource = "none" | "product_name" | "company_name";
-type TextAlign = "left" | "center" | "right";
+type TextVariableSource = 'none' | 'product_name' | 'company_name';
+type TextVariableTarget = 'title' | 'subtitle' | 'both';
+type TextAlign = 'left' | 'center' | 'right';
 
-const DEFAULT_TEXT = "Text";
-const DEFAULT_FONT_SIZE = 32;
-const DEFAULT_FONT_WEIGHT = "700";
-const DEFAULT_TEXT_ALIGN: TextAlign = "left";
-const DEFAULT_TEXT_COLOR = "#ffffff";
+const DEFAULT_TITLE = 'Text';
+const DEFAULT_SUBTITLE = '';
+const DEFAULT_TITLE_FONT_SIZE = 32;
+const DEFAULT_TITLE_FONT_WEIGHT = '700';
+const DEFAULT_SUBTITLE_FONT_SIZE = 16;
+const DEFAULT_SUBTITLE_FONT_WEIGHT = '400';
+const DEFAULT_TEXT_ALIGN: TextAlign = 'left';
+const DEFAULT_TITLE_COLOR = '#ffffff';
+const DEFAULT_SUBTITLE_COLOR = '#d4d4d8';
+const DEFAULT_VARIABLE_TARGET: TextVariableTarget = 'title';
 
-function readText(props?: Record<string, unknown>) {
-  return typeof props?.text === "string" && props.text.trim().length > 0
+function readTitle(props?: Record<string, unknown>) {
+  if (typeof props?.title === 'string' && props.title.trim().length > 0) {
+    return props.title;
+  }
+  return typeof props?.text === 'string' && props.text.trim().length > 0
     ? props.text
-    : DEFAULT_TEXT;
+    : DEFAULT_TITLE;
 }
 
-function readVariableSource(props?: Record<string, unknown>): TextVariableSource {
-  const value = typeof props?.variableSource === "string" ? props.variableSource : "none";
-  if (value === "product_name" || value === "company_name" || value === "none") {
+function readSubtitle(props?: Record<string, unknown>) {
+  return typeof props?.subtitle === 'string' ? props.subtitle : DEFAULT_SUBTITLE;
+}
+
+function readVariableSource(
+  props?: Record<string, unknown>
+): TextVariableSource {
+  const value =
+    typeof props?.variableSource === 'string' ? props.variableSource : 'none';
+  if (
+    value === 'product_name' ||
+    value === 'company_name' ||
+    value === 'none'
+  ) {
     return value;
   }
-  return "none";
+  return 'none';
 }
 
-function readFontSize(props?: Record<string, unknown>) {
-  const value = Number(props?.fontSize);
+function readVariableTarget(
+  props?: Record<string, unknown>
+): TextVariableTarget {
+  const value =
+    typeof props?.variableTarget === 'string' ? props.variableTarget : 'title';
+  if (value === 'title' || value === 'subtitle' || value === 'both') {
+    return value;
+  }
+  return DEFAULT_VARIABLE_TARGET;
+}
+
+function readTitleFontSize(props?: Record<string, unknown>) {
+  const value = Number(props?.titleFontSize ?? props?.fontSize);
   if (Number.isFinite(value)) {
     return Math.min(120, Math.max(12, value));
   }
-  return DEFAULT_FONT_SIZE;
+  return DEFAULT_TITLE_FONT_SIZE;
 }
 
-function readFontWeight(props?: Record<string, unknown>) {
-  const value = typeof props?.fontWeight === "string" ? props.fontWeight : "";
-  return value || DEFAULT_FONT_WEIGHT;
+function readTitleFontWeight(props?: Record<string, unknown>) {
+  const value =
+    typeof props?.titleFontWeight === 'string'
+      ? props.titleFontWeight
+      : typeof props?.fontWeight === 'string'
+        ? props.fontWeight
+        : '';
+  return value || DEFAULT_TITLE_FONT_WEIGHT;
+}
+
+function readSubtitleFontSize(props?: Record<string, unknown>) {
+  const value = Number(props?.subtitleFontSize);
+  if (Number.isFinite(value)) {
+    return Math.min(72, Math.max(12, value));
+  }
+  return DEFAULT_SUBTITLE_FONT_SIZE;
+}
+
+function readSubtitleFontWeight(props?: Record<string, unknown>) {
+  const value =
+    typeof props?.subtitleFontWeight === 'string'
+      ? props.subtitleFontWeight
+      : '';
+  return value || DEFAULT_SUBTITLE_FONT_WEIGHT;
 }
 
 function readTextAlign(props?: Record<string, unknown>): TextAlign {
-  const value = typeof props?.textAlign === "string" ? props.textAlign : "";
-  if (value === "left" || value === "center" || value === "right") {
+  const value = typeof props?.textAlign === 'string' ? props.textAlign : '';
+  if (value === 'left' || value === 'center' || value === 'right') {
     return value;
   }
   return DEFAULT_TEXT_ALIGN;
 }
 
-function readTextColor(props?: Record<string, unknown>) {
-  const value = typeof props?.color === "string" ? props.color.trim() : "";
-  return value || DEFAULT_TEXT_COLOR;
+function readTitleColor(props?: Record<string, unknown>) {
+  const value =
+    typeof props?.titleColor === 'string'
+      ? props.titleColor.trim()
+      : typeof props?.color === 'string'
+        ? props.color.trim()
+        : '';
+  return value || DEFAULT_TITLE_COLOR;
+}
+
+function readSubtitleColor(props?: Record<string, unknown>) {
+  const value =
+    typeof props?.subtitleColor === 'string' ? props.subtitleColor.trim() : '';
+  return value || DEFAULT_SUBTITLE_COLOR;
 }
 
 function resolveTemplate(text: string, variableValue?: string) {
   if (!variableValue) return text;
-  if (text.includes("{{value}}")) {
-    return text.split("{{value}}").join(variableValue);
+  if (text.includes('{{value}}')) {
+    return text.split('{{value}}').join(variableValue);
   }
   return variableValue;
 }
 
 export function DashboardNodeText({ props }: DashboardNodeTextProps) {
-  const text = readText(props);
+  const title = readTitle(props);
+  const subtitle = readSubtitle(props);
   const variableSource = readVariableSource(props);
+  const variableTarget = readVariableTarget(props);
   const productId =
-    typeof props?.productId === "string" && props.productId
+    typeof props?.productId === 'string' && props.productId
       ? props.productId
-      : typeof props?.fallbackProductId === "string"
+      : typeof props?.fallbackProductId === 'string'
         ? props.fallbackProductId
-        : "";
-  const fontSize = readFontSize(props);
-  const fontWeight = readFontWeight(props);
+        : '';
+  const titleFontSize = readTitleFontSize(props);
+  const titleFontWeight = readTitleFontWeight(props);
+  const subtitleFontSize = readSubtitleFontSize(props);
+  const subtitleFontWeight = readSubtitleFontWeight(props);
   const textAlign = readTextAlign(props);
-  const color = readTextColor(props);
+  const titleColor = readTitleColor(props);
+  const subtitleColor = readSubtitleColor(props);
 
   const productQuery = api.products.byId.useQuery(
     { productId },
     {
-      enabled: variableSource === "product_name" && Boolean(productId),
+      enabled: variableSource === 'product_name' && Boolean(productId)
     }
   );
   const tenantQuery = api.tenants.current.useQuery(undefined, {
-    enabled: variableSource === "company_name",
+    enabled: variableSource === 'company_name'
   });
 
   const variableValue =
-    variableSource === "product_name"
+    variableSource === 'product_name'
       ? productQuery.data?.name
-      : variableSource === "company_name"
+      : variableSource === 'company_name'
         ? tenantQuery.data?.tenant?.name
         : undefined;
   const isLoading =
-    (variableSource === "product_name" && productQuery.isLoading) ||
-    (variableSource === "company_name" && tenantQuery.isLoading);
-  const renderedText = resolveTemplate(
-    text,
-    isLoading ? "Loading..." : variableValue
-  );
+    (variableSource === 'product_name' && productQuery.isLoading) ||
+    (variableSource === 'company_name' && tenantQuery.isLoading);
+  const resolvedVariable = isLoading ? 'Loading...' : variableValue;
+  const injectTitle =
+    variableSource !== 'none' &&
+    (variableTarget === 'title' || variableTarget === 'both');
+  const injectSubtitle =
+    variableSource !== 'none' &&
+    (variableTarget === 'subtitle' || variableTarget === 'both');
+  const renderedTitle = injectTitle
+    ? resolveTemplate(title, resolvedVariable)
+    : title;
+  const renderedSubtitle = injectSubtitle
+    ? resolveTemplate(subtitle, resolvedVariable)
+    : subtitle;
 
-  const textStyle: CSSProperties = {
-    color,
-    fontSize: `${fontSize}px`,
-    fontWeight,
+  const titleStyle: CSSProperties = {
+    color: titleColor,
+    fontSize: `${titleFontSize}px`,
+    fontWeight: titleFontWeight,
     lineHeight: 1.08,
-    textAlign,
+    textAlign
+  };
+  const subtitleStyle: CSSProperties = {
+    color: subtitleColor,
+    fontSize: `${subtitleFontSize}px`,
+    fontWeight: subtitleFontWeight,
+    lineHeight: 1.45,
+    textAlign
   };
 
   return (
-    <article className="flex h-full items-center rounded-xl border border-white/10 bg-zinc-950/80 p-4">
-      <div className="w-full">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">
-          Text Node
-        </p>
-        <div className="mt-3 break-words text-balance" style={textStyle}>
-          {renderedText}
+    <article className="p-6">
+      <div className="flex h-full w-full flex-col justify-center gap-3">
+        <div className="break-words text-balance" style={titleStyle}>
+          {renderedTitle}
         </div>
-        {variableSource !== "none" ? (
-          <p className="mt-3 text-xs text-zinc-500">
-            Variable: {variableSource === "product_name" ? "product name" : "company name"}
+        {renderedSubtitle ? (
+          <p className="break-words text-balance" style={subtitleStyle}>
+            {renderedSubtitle}
           </p>
         ) : null}
       </div>

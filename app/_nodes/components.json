@@ -89,11 +89,12 @@
   },
   "node-text": {
     "name": "Text Node",
-    "description": "Simple text block with size, alignment, color, and variable support.",
+    "description": "Structured title and subtitle block with separate styling and variable support.",
     "tags": [
       "text",
       "copy",
       "headline",
+      "subtitle",
       "variable"
     ],
     "defaultLayout": {
@@ -109,11 +110,12 @@
   },
   "text": {
     "name": "Text Node",
-    "description": "Simple text block with size, alignment, color, and variable support.",
+    "description": "Structured title and subtitle block with separate styling and variable support.",
     "tags": [
       "text",
       "copy",
       "headline",
+      "subtitle",
       "variable"
     ],
     "defaultLayout": {

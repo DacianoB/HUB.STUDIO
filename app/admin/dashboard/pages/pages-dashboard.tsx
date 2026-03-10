@@ -82,6 +82,7 @@ type LibraryItemLayout = {
   h: number[];
 };
 type TextVariableSource = "none" | "product_name" | "company_name";
+type TextVariableTarget = "title" | "subtitle" | "both";
 type TextAlign = "left" | "center" | "right";
 
 const defaultPosition = {
@@ -103,12 +104,17 @@ const GRID_BREAKPOINTS = { lg: 1200, sm: 640, xs: 0 };
 const GRID_COLS = { lg: 6, sm: 3, xs: 2 };
 const DEFAULT_LIBRARY_LAYOUT_STYLE: LibraryLayoutStyle = "pinterest";
 const DEFAULT_LIBRARY_RANDOMNESS: LibraryRandomness = "medium";
-const DEFAULT_TEXT_NODE_TEXT = "Text";
-const DEFAULT_TEXT_NODE_FONT_SIZE = 32;
-const DEFAULT_TEXT_NODE_FONT_WEIGHT = "700";
+const DEFAULT_TEXT_NODE_TITLE = "Text";
+const DEFAULT_TEXT_NODE_SUBTITLE = "";
+const DEFAULT_TEXT_NODE_TITLE_FONT_SIZE = 32;
+const DEFAULT_TEXT_NODE_TITLE_FONT_WEIGHT = "700";
+const DEFAULT_TEXT_NODE_SUBTITLE_FONT_SIZE = 16;
+const DEFAULT_TEXT_NODE_SUBTITLE_FONT_WEIGHT = "400";
 const DEFAULT_TEXT_NODE_TEXT_ALIGN: TextAlign = "left";
-const DEFAULT_TEXT_NODE_COLOR = "#ffffff";
+const DEFAULT_TEXT_NODE_TITLE_COLOR = "#ffffff";
+const DEFAULT_TEXT_NODE_SUBTITLE_COLOR = "#d4d4d8";
 const DEFAULT_TEXT_NODE_VARIABLE: TextVariableSource = "none";
+const DEFAULT_TEXT_NODE_VARIABLE_TARGET: TextVariableTarget = "title";
 const PREVIEW_BREAKPOINTS = {
   lg: { label: "Desktop", width: 1280 },
   sm: { label: "Tablet", width: 820 },
@@ -349,24 +355,58 @@ function readTextVariableSource(
   return DEFAULT_TEXT_NODE_VARIABLE;
 }
 
-function readTextNodeText(props?: Record<string, unknown> | null) {
-  return typeof props?.text === "string" && props.text.trim().length > 0
-    ? props.text
-    : DEFAULT_TEXT_NODE_TEXT;
+function readTextVariableTarget(
+  props?: Record<string, unknown> | null
+): TextVariableTarget {
+  const value =
+    typeof props?.variableTarget === "string" ? props.variableTarget : "title";
+  if (value === "title" || value === "subtitle" || value === "both") {
+    return value;
+  }
+  return DEFAULT_TEXT_NODE_VARIABLE_TARGET;
 }
 
-function readTextNodeFontSize(props?: Record<string, unknown> | null) {
-  const value = Number(props?.fontSize);
+function readTextNodeTitle(props?: Record<string, unknown> | null) {
+  if (typeof props?.title === "string" && props.title.trim().length > 0) {
+    return props.title;
+  }
+  return typeof props?.text === "string" && props.text.trim().length > 0
+    ? props.text
+    : DEFAULT_TEXT_NODE_TITLE;
+}
+
+function readTextNodeSubtitle(props?: Record<string, unknown> | null) {
+  return typeof props?.subtitle === "string" ? props.subtitle : DEFAULT_TEXT_NODE_SUBTITLE;
+}
+
+function readTextNodeTitleFontSize(props?: Record<string, unknown> | null) {
+  const value = Number(props?.titleFontSize ?? props?.fontSize);
   if (Number.isFinite(value)) {
     return Math.max(12, Math.min(120, value));
   }
-  return DEFAULT_TEXT_NODE_FONT_SIZE;
+  return DEFAULT_TEXT_NODE_TITLE_FONT_SIZE;
 }
 
-function readTextNodeFontWeight(props?: Record<string, unknown> | null) {
-  return typeof props?.fontWeight === "string" && props.fontWeight
-    ? props.fontWeight
-    : DEFAULT_TEXT_NODE_FONT_WEIGHT;
+function readTextNodeTitleFontWeight(props?: Record<string, unknown> | null) {
+  return typeof props?.titleFontWeight === "string" && props.titleFontWeight
+    ? props.titleFontWeight
+    : typeof props?.fontWeight === "string" && props.fontWeight
+      ? props.fontWeight
+      : DEFAULT_TEXT_NODE_TITLE_FONT_WEIGHT;
+}
+
+function readTextNodeSubtitleFontSize(props?: Record<string, unknown> | null) {
+  const value = Number(props?.subtitleFontSize);
+  if (Number.isFinite(value)) {
+    return Math.max(12, Math.min(72, value));
+  }
+  return DEFAULT_TEXT_NODE_SUBTITLE_FONT_SIZE;
+}
+
+function readTextNodeSubtitleFontWeight(props?: Record<string, unknown> | null) {
+  return typeof props?.subtitleFontWeight === "string" && props.subtitleFontWeight
+    ? props.subtitleFontWeight
+    : DEFAULT_TEXT_NODE_SUBTITLE_FONT_WEIGHT;
 }
 
 function readTextNodeTextAlign(props?: Record<string, unknown> | null): TextAlign {
@@ -377,28 +417,52 @@ function readTextNodeTextAlign(props?: Record<string, unknown> | null): TextAlig
   return DEFAULT_TEXT_NODE_TEXT_ALIGN;
 }
 
-function readTextNodeColor(props?: Record<string, unknown> | null) {
-  return typeof props?.color === "string" && props.color.trim().length > 0
-    ? props.color
-    : DEFAULT_TEXT_NODE_COLOR;
+function readTextNodeTitleColor(props?: Record<string, unknown> | null) {
+  return typeof props?.titleColor === "string" && props.titleColor.trim().length > 0
+    ? props.titleColor
+    : typeof props?.color === "string" && props.color.trim().length > 0
+      ? props.color
+      : DEFAULT_TEXT_NODE_TITLE_COLOR;
+}
+
+function readTextNodeSubtitleColor(props?: Record<string, unknown> | null) {
+  return typeof props?.subtitleColor === "string" && props.subtitleColor.trim().length > 0
+    ? props.subtitleColor
+    : DEFAULT_TEXT_NODE_SUBTITLE_COLOR;
 }
 
 function buildTextNodeProps(
-  text: string,
+  title: string,
+  subtitle: string,
   variableSource: TextVariableSource,
-  fontSize: number,
-  fontWeight: string,
+  variableTarget: TextVariableTarget,
+  titleFontSize: number,
+  titleFontWeight: string,
+  subtitleFontSize: number,
+  subtitleFontWeight: string,
   textAlign: TextAlign,
-  color: string,
+  titleColor: string,
+  subtitleColor: string,
   productId?: string
 ) {
   return {
-    text: text.trim() || DEFAULT_TEXT_NODE_TEXT,
+    title: title.trim() || DEFAULT_TEXT_NODE_TITLE,
+    subtitle: subtitle.trim(),
     variableSource,
-    fontSize: Math.max(12, Math.min(120, fontSize || DEFAULT_TEXT_NODE_FONT_SIZE)),
-    fontWeight: fontWeight || DEFAULT_TEXT_NODE_FONT_WEIGHT,
+    variableTarget,
+    titleFontSize: Math.max(
+      12,
+      Math.min(120, titleFontSize || DEFAULT_TEXT_NODE_TITLE_FONT_SIZE)
+    ),
+    titleFontWeight: titleFontWeight || DEFAULT_TEXT_NODE_TITLE_FONT_WEIGHT,
+    subtitleFontSize: Math.max(
+      12,
+      Math.min(72, subtitleFontSize || DEFAULT_TEXT_NODE_SUBTITLE_FONT_SIZE)
+    ),
+    subtitleFontWeight: subtitleFontWeight || DEFAULT_TEXT_NODE_SUBTITLE_FONT_WEIGHT,
     textAlign,
-    color: color.trim() || DEFAULT_TEXT_NODE_COLOR,
+    titleColor: titleColor.trim() || DEFAULT_TEXT_NODE_TITLE_COLOR,
+    subtitleColor: subtitleColor.trim() || DEFAULT_TEXT_NODE_SUBTITLE_COLOR,
     ...(variableSource === "product_name" && productId ? { productId } : {}),
   };
 }
@@ -594,19 +658,33 @@ export function PagesDashboard() {
   );
   const [libraryWidthOptionsText, setLibraryWidthOptionsText] = useState("1");
   const [libraryHeightOptionsText, setLibraryHeightOptionsText] = useState("6,8,10");
-  const [textNodeText, setTextNodeText] = useState(DEFAULT_TEXT_NODE_TEXT);
+  const [textNodeTitle, setTextNodeTitle] = useState(DEFAULT_TEXT_NODE_TITLE);
+  const [textNodeSubtitle, setTextNodeSubtitle] = useState(DEFAULT_TEXT_NODE_SUBTITLE);
   const [textNodeVariableSource, setTextNodeVariableSource] =
     useState<TextVariableSource>(DEFAULT_TEXT_NODE_VARIABLE);
-  const [textNodeFontSize, setTextNodeFontSize] = useState(
-    String(DEFAULT_TEXT_NODE_FONT_SIZE)
+  const [textNodeVariableTarget, setTextNodeVariableTarget] =
+    useState<TextVariableTarget>(DEFAULT_TEXT_NODE_VARIABLE_TARGET);
+  const [textNodeTitleFontSize, setTextNodeTitleFontSize] = useState(
+    String(DEFAULT_TEXT_NODE_TITLE_FONT_SIZE)
   );
-  const [textNodeFontWeight, setTextNodeFontWeight] = useState(
-    DEFAULT_TEXT_NODE_FONT_WEIGHT
+  const [textNodeTitleFontWeight, setTextNodeTitleFontWeight] = useState(
+    DEFAULT_TEXT_NODE_TITLE_FONT_WEIGHT
+  );
+  const [textNodeSubtitleFontSize, setTextNodeSubtitleFontSize] = useState(
+    String(DEFAULT_TEXT_NODE_SUBTITLE_FONT_SIZE)
+  );
+  const [textNodeSubtitleFontWeight, setTextNodeSubtitleFontWeight] = useState(
+    DEFAULT_TEXT_NODE_SUBTITLE_FONT_WEIGHT
   );
   const [textNodeTextAlign, setTextNodeTextAlign] = useState<TextAlign>(
     DEFAULT_TEXT_NODE_TEXT_ALIGN
   );
-  const [textNodeColor, setTextNodeColor] = useState(DEFAULT_TEXT_NODE_COLOR);
+  const [textNodeTitleColor, setTextNodeTitleColor] = useState(
+    DEFAULT_TEXT_NODE_TITLE_COLOR
+  );
+  const [textNodeSubtitleColor, setTextNodeSubtitleColor] = useState(
+    DEFAULT_TEXT_NODE_SUBTITLE_COLOR
+  );
   const [nodeSearch, setNodeSearch] = useState("");
   const [previewBreakpoint, setPreviewBreakpoint] =
     useState<keyof typeof PREVIEW_BREAKPOINTS>("lg");
@@ -810,12 +888,17 @@ export function PagesDashboard() {
     setLibraryRandomness(DEFAULT_LIBRARY_RANDOMNESS);
     setLibraryWidthOptionsText("1");
     setLibraryHeightOptionsText("6,8,10");
-    setTextNodeText(DEFAULT_TEXT_NODE_TEXT);
+    setTextNodeTitle(DEFAULT_TEXT_NODE_TITLE);
+    setTextNodeSubtitle(DEFAULT_TEXT_NODE_SUBTITLE);
     setTextNodeVariableSource(DEFAULT_TEXT_NODE_VARIABLE);
-    setTextNodeFontSize(String(DEFAULT_TEXT_NODE_FONT_SIZE));
-    setTextNodeFontWeight(DEFAULT_TEXT_NODE_FONT_WEIGHT);
+    setTextNodeVariableTarget(DEFAULT_TEXT_NODE_VARIABLE_TARGET);
+    setTextNodeTitleFontSize(String(DEFAULT_TEXT_NODE_TITLE_FONT_SIZE));
+    setTextNodeTitleFontWeight(DEFAULT_TEXT_NODE_TITLE_FONT_WEIGHT);
+    setTextNodeSubtitleFontSize(String(DEFAULT_TEXT_NODE_SUBTITLE_FONT_SIZE));
+    setTextNodeSubtitleFontWeight(DEFAULT_TEXT_NODE_SUBTITLE_FONT_WEIGHT);
     setTextNodeTextAlign(DEFAULT_TEXT_NODE_TEXT_ALIGN);
-    setTextNodeColor(DEFAULT_TEXT_NODE_COLOR);
+    setTextNodeTitleColor(DEFAULT_TEXT_NODE_TITLE_COLOR);
+    setTextNodeSubtitleColor(DEFAULT_TEXT_NODE_SUBTITLE_COLOR);
     setPageLayouts(buildLayoutsFromPage(page));
   }
 
@@ -838,12 +921,17 @@ export function PagesDashboard() {
     const itemLayout = readLibraryItemLayout(props);
     setLibraryWidthOptionsText(itemLayout.w.join(","));
     setLibraryHeightOptionsText(itemLayout.h.join(","));
-    setTextNodeText(readTextNodeText(props));
+    setTextNodeTitle(readTextNodeTitle(props));
+    setTextNodeSubtitle(readTextNodeSubtitle(props));
     setTextNodeVariableSource(readTextVariableSource(props));
-    setTextNodeFontSize(String(readTextNodeFontSize(props)));
-    setTextNodeFontWeight(readTextNodeFontWeight(props));
+    setTextNodeVariableTarget(readTextVariableTarget(props));
+    setTextNodeTitleFontSize(String(readTextNodeTitleFontSize(props)));
+    setTextNodeTitleFontWeight(readTextNodeTitleFontWeight(props));
+    setTextNodeSubtitleFontSize(String(readTextNodeSubtitleFontSize(props)));
+    setTextNodeSubtitleFontWeight(readTextNodeSubtitleFontWeight(props));
     setTextNodeTextAlign(readTextNodeTextAlign(props));
-    setTextNodeColor(readTextNodeColor(props));
+    setTextNodeTitleColor(readTextNodeTitleColor(props));
+    setTextNodeSubtitleColor(readTextNodeSubtitleColor(props));
   }
 
   async function createPage(parentPageId?: string) {
@@ -937,12 +1025,17 @@ export function PagesDashboard() {
         : {}
       : isTextNodeType(nodeType)
         ? buildTextNodeProps(
-            DEFAULT_TEXT_NODE_TEXT,
+            DEFAULT_TEXT_NODE_TITLE,
+            DEFAULT_TEXT_NODE_SUBTITLE,
             DEFAULT_TEXT_NODE_VARIABLE,
-            DEFAULT_TEXT_NODE_FONT_SIZE,
-            DEFAULT_TEXT_NODE_FONT_WEIGHT,
+            DEFAULT_TEXT_NODE_VARIABLE_TARGET,
+            DEFAULT_TEXT_NODE_TITLE_FONT_SIZE,
+            DEFAULT_TEXT_NODE_TITLE_FONT_WEIGHT,
+            DEFAULT_TEXT_NODE_SUBTITLE_FONT_SIZE,
+            DEFAULT_TEXT_NODE_SUBTITLE_FONT_WEIGHT,
             DEFAULT_TEXT_NODE_TEXT_ALIGN,
-            DEFAULT_TEXT_NODE_COLOR
+            DEFAULT_TEXT_NODE_TITLE_COLOR,
+            DEFAULT_TEXT_NODE_SUBTITLE_COLOR
           )
         : {};
 
@@ -1372,12 +1465,17 @@ export function PagesDashboard() {
                                 title: "Text node",
                                 type: "text",
                                 props: buildTextNodeProps(
-                                  DEFAULT_TEXT_NODE_TEXT,
+                                  DEFAULT_TEXT_NODE_TITLE,
+                                  DEFAULT_TEXT_NODE_SUBTITLE,
                                   DEFAULT_TEXT_NODE_VARIABLE,
-                                  DEFAULT_TEXT_NODE_FONT_SIZE,
-                                  DEFAULT_TEXT_NODE_FONT_WEIGHT,
+                                  DEFAULT_TEXT_NODE_VARIABLE_TARGET,
+                                  DEFAULT_TEXT_NODE_TITLE_FONT_SIZE,
+                                  DEFAULT_TEXT_NODE_TITLE_FONT_WEIGHT,
+                                  DEFAULT_TEXT_NODE_SUBTITLE_FONT_SIZE,
+                                  DEFAULT_TEXT_NODE_SUBTITLE_FONT_WEIGHT,
                                   DEFAULT_TEXT_NODE_TEXT_ALIGN,
-                                  DEFAULT_TEXT_NODE_COLOR
+                                  DEFAULT_TEXT_NODE_TITLE_COLOR,
+                                  DEFAULT_TEXT_NODE_SUBTITLE_COLOR
                                 ),
                                 position: textNodePosition,
                                 sortOrder: Number(nodeSortOrder || "0") + 1,
@@ -1622,16 +1720,24 @@ export function PagesDashboard() {
                                 <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                                   Text content
                                 </p>
-                                <textarea
-                                  className="mt-3 h-28 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-sky-400/50"
-                                  value={textNodeText}
-                                  onChange={(event) => setTextNodeText(event.target.value)}
-                                  placeholder="Use {{value}} to inject the selected variable."
-                                />
+                                <div className="mt-3 grid gap-3">
+                                  <input
+                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    value={textNodeTitle}
+                                    onChange={(event) => setTextNodeTitle(event.target.value)}
+                                    placeholder="Title"
+                                  />
+                                  <textarea
+                                    className="h-24 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    value={textNodeSubtitle}
+                                    onChange={(event) => setTextNodeSubtitle(event.target.value)}
+                                    placeholder="Subtitle"
+                                  />
+                                </div>
                                 <p className="mt-3 text-xs text-zinc-400">
-                                  If a variable is selected, use <code>{"{{value}}"}</code> inside
-                                  the text template. If you leave it out, the variable value is
-                                  shown by itself.
+                                  Use <code>{"{{value}}"}</code> in either field to inject the
+                                  selected variable. Without the token, the chosen target field is
+                                  replaced by the variable value.
                                 </p>
                               </div>
 
@@ -1653,9 +1759,23 @@ export function PagesDashboard() {
                                     <option value="product_name">Product name</option>
                                     <option value="company_name">Company name</option>
                                   </select>
+                                  <select
+                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    value={textNodeVariableTarget}
+                                    onChange={(event) =>
+                                      setTextNodeVariableTarget(
+                                        event.target.value as TextVariableTarget
+                                      )
+                                    }
+                                    disabled={textNodeVariableSource === "none"}
+                                  >
+                                    <option value="title">Fill title</option>
+                                    <option value="subtitle">Fill subtitle</option>
+                                    <option value="both">Fill both</option>
+                                  </select>
                                   {textNodeVariableSource === "product_name" ? (
                                     <select
-                                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50 sm:col-span-2"
                                       value={selectedProductForNode}
                                       onChange={(event) =>
                                         setSelectedProductForNode(event.target.value)
@@ -1669,7 +1789,7 @@ export function PagesDashboard() {
                                       ))}
                                     </select>
                                   ) : (
-                                    <div className="flex h-11 items-center rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-zinc-400">
+                                    <div className="flex h-11 items-center rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-zinc-400 sm:col-span-2">
                                       {textNodeVariableSource === "company_name"
                                         ? "Uses the current tenant/company name."
                                         : "No variable linked."}
@@ -1685,20 +1805,44 @@ export function PagesDashboard() {
                                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                                   <input
                                     className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
-                                    value={textNodeFontSize}
-                                    onChange={(event) => setTextNodeFontSize(event.target.value)}
-                                    placeholder="32"
+                                    value={textNodeTitleFontSize}
+                                    onChange={(event) =>
+                                      setTextNodeTitleFontSize(event.target.value)
+                                    }
+                                    placeholder="Title size"
                                   />
                                   <select
                                     className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
-                                    value={textNodeFontWeight}
-                                    onChange={(event) => setTextNodeFontWeight(event.target.value)}
+                                    value={textNodeTitleFontWeight}
+                                    onChange={(event) =>
+                                      setTextNodeTitleFontWeight(event.target.value)
+                                    }
                                   >
                                     <option value="400">Regular</option>
                                     <option value="500">Medium</option>
                                     <option value="600">Semibold</option>
                                     <option value="700">Bold</option>
                                     <option value="800">Extra bold</option>
+                                  </select>
+                                  <input
+                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    value={textNodeSubtitleFontSize}
+                                    onChange={(event) =>
+                                      setTextNodeSubtitleFontSize(event.target.value)
+                                    }
+                                    placeholder="Subtitle size"
+                                  />
+                                  <select
+                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    value={textNodeSubtitleFontWeight}
+                                    onChange={(event) =>
+                                      setTextNodeSubtitleFontWeight(event.target.value)
+                                    }
+                                  >
+                                    <option value="400">Regular</option>
+                                    <option value="500">Medium</option>
+                                    <option value="600">Semibold</option>
+                                    <option value="700">Bold</option>
                                   </select>
                                   <select
                                     className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
@@ -1714,12 +1858,27 @@ export function PagesDashboard() {
                                   <div className="flex h-11 items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3">
                                     <input
                                       type="color"
-                                      value={textNodeColor}
-                                      onChange={(event) => setTextNodeColor(event.target.value)}
+                                      value={textNodeTitleColor}
+                                      onChange={(event) =>
+                                        setTextNodeTitleColor(event.target.value)
+                                      }
                                       className="h-7 w-10 rounded border border-white/10 bg-transparent"
                                     />
                                     <span className="font-mono text-xs text-zinc-300">
-                                      {textNodeColor}
+                                      {textNodeTitleColor}
+                                    </span>
+                                  </div>
+                                  <div className="flex h-11 items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3 sm:col-span-2">
+                                    <input
+                                      type="color"
+                                      value={textNodeSubtitleColor}
+                                      onChange={(event) =>
+                                        setTextNodeSubtitleColor(event.target.value)
+                                      }
+                                      className="h-7 w-10 rounded border border-white/10 bg-transparent"
+                                    />
+                                    <span className="font-mono text-xs text-zinc-300">
+                                      {textNodeSubtitleColor}
                                     </span>
                                   </div>
                                 </div>
@@ -1800,12 +1959,22 @@ export function PagesDashboard() {
 
                                 if (isTextNodeType(selectedNode.type)) {
                                   parsed = buildTextNodeProps(
-                                    textNodeText,
+                                    textNodeTitle,
+                                    textNodeSubtitle,
                                     textNodeVariableSource,
-                                    Number(textNodeFontSize || DEFAULT_TEXT_NODE_FONT_SIZE),
-                                    textNodeFontWeight,
+                                    textNodeVariableTarget,
+                                    Number(
+                                      textNodeTitleFontSize || DEFAULT_TEXT_NODE_TITLE_FONT_SIZE
+                                    ),
+                                    textNodeTitleFontWeight,
+                                    Number(
+                                      textNodeSubtitleFontSize ||
+                                        DEFAULT_TEXT_NODE_SUBTITLE_FONT_SIZE
+                                    ),
+                                    textNodeSubtitleFontWeight,
                                     textNodeTextAlign,
-                                    textNodeColor,
+                                    textNodeTitleColor,
+                                    textNodeSubtitleColor,
                                     selectedProductForNode || selectedPageFallbackProductId || undefined
                                   );
                                 }

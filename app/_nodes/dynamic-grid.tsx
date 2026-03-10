@@ -42,7 +42,7 @@ type DynamicGridProps = {
   };
 };
 
-type StoredLayoutBreakpoint = "lg" | "sm" | "xs";
+type StoredLayoutBreakpoint = 'lg' | 'sm' | 'xs';
 type GridLayoutItem = {
   i: string;
   x: number;
@@ -61,8 +61,8 @@ type RuntimeItem = {
   position?: Record<StoredLayoutBreakpoint, GridLayoutItem>;
 };
 
-type LibraryLayoutStyle = "uniform" | "masonry" | "pinterest";
-type LibraryRandomness = "low" | "medium" | "high";
+type LibraryLayoutStyle = 'uniform' | 'masonry' | 'pinterest';
+type LibraryRandomness = 'low' | 'medium' | 'high';
 type LibraryAssetSnapshot = {
   id: string;
   title: string;
@@ -99,7 +99,7 @@ const GRID_BREAKPOINTS = {
   xs: 480,
   xxs: 0
 };
-const GRID_COLS = { xl: 6, lg: 5, md: 4, sm: 3, xs: 2, xxs: 2 };
+const GRID_COLS = { xl: 5, lg: 5, md: 4, sm: 3, xs: 2, xxs: 2 };
 const NAV_ITEMS = [
   { label: 'Explorar', icon: Compass },
   { label: 'Notificacoes', icon: Bell },
@@ -127,69 +127,88 @@ function logicalNodeType(type: string) {
 
 function isLibraryViewNodeType(type: string) {
   const logical = logicalNodeType(type);
-  return logical === "library_view" || logical === "library-view";
+  return logical === 'library_view' || logical === 'library-view';
 }
 
 function isTextNodeType(type: string) {
-  return logicalNodeType(type) === "text";
+  return logicalNodeType(type) === 'text';
 }
 
 function readLibraryProductId(props?: Record<string, unknown>) {
-  return typeof props?.productId === "string" ? props.productId : "";
+  return typeof props?.productId === 'string' ? props.productId : '';
 }
 
-function toLibraryAssetSnapshot(asset: Record<string, unknown>): LibraryAssetSnapshot {
+function toLibraryAssetSnapshot(
+  asset: Record<string, unknown>
+): LibraryAssetSnapshot {
   return {
-    id: String(asset.id ?? ""),
-    title: String(asset.title ?? ""),
-    url: String(asset.url ?? ""),
-    type: String(asset.type ?? "FILE"),
-    targetUrl: typeof asset.targetUrl === "string" ? asset.targetUrl : null,
-    openInNewTab: typeof asset.openInNewTab === "boolean" ? asset.openInNewTab : null,
-    previewUrl: typeof asset.previewUrl === "string" ? asset.previewUrl : null,
-    thumbnailUrl: typeof asset.thumbnailUrl === "string" ? asset.thumbnailUrl : null,
+    id: String(asset.id ?? ''),
+    title: String(asset.title ?? ''),
+    url: String(asset.url ?? ''),
+    type: String(asset.type ?? 'FILE'),
+    targetUrl: typeof asset.targetUrl === 'string' ? asset.targetUrl : null,
+    openInNewTab:
+      typeof asset.openInNewTab === 'boolean' ? asset.openInNewTab : null,
+    previewUrl: typeof asset.previewUrl === 'string' ? asset.previewUrl : null,
+    thumbnailUrl:
+      typeof asset.thumbnailUrl === 'string' ? asset.thumbnailUrl : null
   };
 }
 
-function readLibraryLayoutStyle(props?: Record<string, unknown>): LibraryLayoutStyle {
-  const value = typeof props?.layoutStyle === "string" ? props.layoutStyle : "";
-  if (value === "uniform" || value === "masonry" || value === "pinterest") {
+function readLibraryLayoutStyle(
+  props?: Record<string, unknown>
+): LibraryLayoutStyle {
+  const value = typeof props?.layoutStyle === 'string' ? props.layoutStyle : '';
+  if (value === 'uniform' || value === 'masonry' || value === 'pinterest') {
     return value;
   }
-  return "pinterest";
+  return 'pinterest';
 }
 
-function readLibraryRandomness(props?: Record<string, unknown>): LibraryRandomness {
-  const value = typeof props?.randomness === "string" ? props.randomness : "";
-  if (value === "low" || value === "medium" || value === "high") {
+function readLibraryRandomness(
+  props?: Record<string, unknown>
+): LibraryRandomness {
+  const value = typeof props?.randomness === 'string' ? props.randomness : '';
+  if (value === 'low' || value === 'medium' || value === 'high') {
     return value;
   }
-  return "medium";
+  return 'medium';
 }
 
-function readLibraryAssets(props?: Record<string, unknown>): LibraryAssetSnapshot[] {
+function readLibraryAssets(
+  props?: Record<string, unknown>
+): LibraryAssetSnapshot[] {
   const raw = props?.assets;
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter((asset): asset is Record<string, unknown> => Boolean(asset) && typeof asset === "object")
+    .filter(
+      (asset): asset is Record<string, unknown> =>
+        Boolean(asset) && typeof asset === 'object'
+    )
     .map((asset) => toLibraryAssetSnapshot(asset))
     .filter((asset) => Boolean(asset.id) && Boolean(asset.url));
 }
 
-function readLibraryItemLayout(props?: Record<string, unknown>): LibraryItemLayout {
+function readLibraryItemLayout(
+  props?: Record<string, unknown>
+): LibraryItemLayout {
   const raw =
-    props?.itemLayout && typeof props.itemLayout === "object"
+    props?.itemLayout && typeof props.itemLayout === 'object'
       ? (props.itemLayout as Record<string, unknown>)
       : {};
   const widths = Array.isArray(raw.w)
-    ? raw.w.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)
+    ? raw.w
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
     : [];
   const heights = Array.isArray(raw.h)
-    ? raw.h.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)
+    ? raw.h
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
     : [];
   return {
     w: widths.length ? widths : [1],
-    h: heights.length ? heights : [6, 8, 10],
+    h: heights.length ? heights : [6, 8, 10]
   };
 }
 
@@ -210,12 +229,17 @@ function buildLibraryHeightCandidates(
   const heightsByStyle: Record<LibraryLayoutStyle, number[]> = {
     uniform: [normalizedBase],
     masonry: [normalizedBase - 2, normalizedBase, normalizedBase + 2],
-    pinterest: [normalizedBase - 2, normalizedBase, normalizedBase + 2, normalizedBase + 4],
+    pinterest: [
+      normalizedBase - 2,
+      normalizedBase,
+      normalizedBase + 2,
+      normalizedBase + 4
+    ]
   };
   const allowedByRandomness: Record<LibraryRandomness, number> = {
     low: 2,
     medium: 3,
-    high: 4,
+    high: 4
   };
   return heightsByStyle[layoutStyle]
     .slice(0, allowedByRandomness[randomness])
@@ -238,7 +262,7 @@ function clampGridItem(position: GridLayoutItem, cols: number): GridLayoutItem {
     x,
     y: Math.max(0, position.y),
     w,
-    h: Math.max(2, position.h),
+    h: Math.max(2, position.h)
   };
 }
 
@@ -251,7 +275,7 @@ function toResponsiveLayouts(
     md: layouts.lg.map((item) => clampGridItem(item, GRID_COLS.md)),
     sm: layouts.sm.map((item) => clampGridItem(item, GRID_COLS.sm)),
     xs: layouts.xs.map((item) => clampGridItem(item, GRID_COLS.xs)),
-    xxs: layouts.xs.map((item) => clampGridItem(item, GRID_COLS.xxs)),
+    xxs: layouts.xs.map((item) => clampGridItem(item, GRID_COLS.xxs))
   };
 }
 
@@ -266,7 +290,7 @@ function filterStoredLayoutEntries(
       x: entry.x,
       y: entry.y,
       w: entry.w,
-      h: entry.h,
+      h: entry.h
     }));
 }
 
@@ -274,7 +298,7 @@ function expandLibraryViewItems(
   items: RuntimeItem[],
   sourcePageSlug?: string,
   liveAssetsByProductId?: Map<string, LibraryAssetSnapshot[]>,
-  breakpoint: StoredLayoutBreakpoint = "lg",
+  breakpoint: StoredLayoutBreakpoint = 'lg',
   layoutById?: Map<string, GridLayoutItem>
 ) {
   const regularItems: RuntimeItem[] = [];
@@ -322,29 +346,34 @@ function expandLibraryViewItems(
   };
 
   for (const item of regularItems) {
-    const position = layoutById?.get(item.i) ?? item.position?.[breakpoint] ?? {
-      i: item.i,
-      x: item.x,
-      y: item.y,
-      w: item.w,
-      h: item.h,
-    };
+    const position = layoutById?.get(item.i) ??
+      item.position?.[breakpoint] ?? {
+        i: item.i,
+        x: item.x,
+        y: item.y,
+        w: item.w,
+        h: item.h
+      };
     occupy(position.x, position.y, position.w, position.h);
   }
 
   const expandedItems = librarySources.flatMap((item) => {
     const productId = readLibraryProductId(item.props);
     const assets =
-      (productId ? liveAssetsByProductId?.get(productId) : undefined) ?? readLibraryAssets(item.props);
-    const basePosition = layoutById?.get(item.i) ?? item.position?.[breakpoint] ?? {
-      i: item.i,
-      x: item.x,
-      y: item.y,
-      w: item.w,
-      h: item.h,
-    };
+      (productId ? liveAssetsByProductId?.get(productId) : undefined) ??
+      readLibraryAssets(item.props);
+    const basePosition = layoutById?.get(item.i) ??
+      item.position?.[breakpoint] ?? {
+        i: item.i,
+        x: item.x,
+        y: item.y,
+        w: item.w,
+        h: item.h
+      };
     const itemLayout = readLibraryItemLayout(item.props);
-    const widths = itemLayout.w.map((value) => Math.max(1, Math.min(value, activeCols)));
+    const widths = itemLayout.w.map((value) =>
+      Math.max(1, Math.min(value, activeCols))
+    );
     const heights = itemLayout.h.map((value) => Math.max(4, value));
 
     return assets.map((asset, index) => {
@@ -355,7 +384,7 @@ function expandLibraryViewItems(
       occupy(placement.x, placement.y, w, h);
       return {
         i: `${item.i}::asset::${asset.id}`,
-        type: "library-asset-item",
+        type: 'library-asset-item',
         x: placement.x,
         y: placement.y,
         w,
@@ -363,8 +392,8 @@ function expandLibraryViewItems(
         props: {
           asset,
           sourceNodeId: item.i,
-          sourcePageSlug: normalizedSourcePageSlug || undefined,
-        },
+          sourcePageSlug: normalizedSourcePageSlug || undefined
+        }
       } satisfies RuntimeItem;
     });
   });
@@ -437,67 +466,70 @@ function buildRuntimeItems(preset: Preset): RuntimeItem[] {
           x: item.position.lg.x,
           y: item.position.lg.y,
           w: item.position.lg.w,
-          h: item.position.lg.h,
+          h: item.position.lg.h
         },
         sm: {
           i: item.i,
           x: item.position.sm.x,
           y: item.position.sm.y,
           w: item.position.sm.w,
-          h: item.position.sm.h,
+          h: item.position.sm.h
         },
         xs: {
           i: item.i,
           x: item.position.xs.x,
           y: item.position.xs.y,
           w: item.position.xs.w,
-          h: item.position.xs.h,
-        },
+          h: item.position.xs.h
+        }
       }
     }));
 }
 
 function buildLayouts(items: RuntimeItem[]) {
   return toResponsiveLayouts({
-    lg: items.map((item) =>
-      item.position?.lg ??
-      clampGridItem(
-        {
-          i: item.i,
-          x: item.x,
-          y: item.y,
-          w: item.w,
-          h: item.h,
-        },
-        GRID_COLS.lg
-      )
+    lg: items.map(
+      (item) =>
+        item.position?.lg ??
+        clampGridItem(
+          {
+            i: item.i,
+            x: item.x,
+            y: item.y,
+            w: item.w,
+            h: item.h
+          },
+          GRID_COLS.lg
+        )
     ),
-    sm: items.map((item) =>
-      item.position?.sm ??
-      clampGridItem(
-        {
-          i: item.i,
-          x: item.x,
-          y: item.y,
-          w: Math.min(item.w, GRID_COLS.sm),
-          h: item.h,
-        },
-        GRID_COLS.sm
-      )
+    sm: items.map(
+      (item) =>
+        item.position?.sm ??
+        clampGridItem(
+          {
+            i: item.i,
+            x: item.x,
+            y: item.y,
+            w: Math.min(item.w, GRID_COLS.sm),
+            h: item.h
+          },
+          GRID_COLS.sm
+        )
     ),
-    xs: items.map((item) =>
-      item.position?.xs ??
-      clampGridItem(
-        {
-          i: item.i,
-          x: item.x,
-          y: item.y,
-          w: Math.min(item.w, GRID_COLS.xs),
-          h: item.h,
-        },
-        GRID_COLS.xs
-      )
-    ),
+    xs: items.map(
+      (item) =>
+        item.position?.xs ??
+        clampGridItem(
+          {
+            i: item.i,
+            x: item.x,
+            y: item.y,
+            w: Math.min(item.w, GRID_COLS.xs),
+            h: item.h
+          },
+          GRID_COLS.xs
+        )
+    )
   });
 }
 
@@ -607,11 +639,19 @@ function DynamicGridCanvas({
   }, [canUserEditLayout]);
   const isAdminPreview = Boolean(adminPreview);
   const isLayoutEditing = isAdminPreview ? true : isEditing;
+  useEffect(() => {
+    if (adminPreview?.forcedBreakpoint) {
+      setCurrentBreakpoint(adminPreview.forcedBreakpoint);
+    }
+  }, [adminPreview?.forcedBreakpoint]);
   const activeStoredBreakpoint = isAdminPreview
-    ? adminPreview?.forcedBreakpoint ?? 'lg'
+    ? (adminPreview?.forcedBreakpoint ?? 'lg')
     : getStoredBreakpointKey(currentBreakpoint);
   const effectiveLayouts = useMemo(
-    () => (adminPreview ? toResponsiveLayouts(adminPreview.layoutOverrides) : layouts),
+    () =>
+      adminPreview
+        ? toResponsiveLayouts(adminPreview.layoutOverrides)
+        : layouts,
     [adminPreview, layouts]
   );
   const defaultNavParent = useMemo(() => {
@@ -672,8 +712,8 @@ function DynamicGridCanvas({
       const assets = (product?.assets ?? [])
         .filter((asset) => {
           if (asset.stepId) return false;
-          if (asset.moduleType === "COURSE") return false;
-          if (asset.placement === "STEP") return false;
+          if (asset.moduleType === 'COURSE') return false;
+          if (asset.placement === 'STEP') return false;
           return true;
         })
         .map((asset) => toLibraryAssetSnapshot(asset))
@@ -755,8 +795,12 @@ function DynamicGridCanvas({
     });
   }, [search, items, componentEntries, isAdminPreview]);
 
-  const gridItemsToRender = useMemo(
-    () => [
+  const gridItemsToRender = useMemo(() => {
+    if (isAdminPreview) {
+      return [...filteredItems, ...searchNodeItems];
+    }
+
+    return [
       // Library assets are expanded after regular nodes and fill remaining slots.
       ...expandLibraryViewItems(
         filteredItems,
@@ -764,36 +808,30 @@ function DynamicGridCanvas({
         liveLibraryAssetsByProductId,
         activeStoredBreakpoint,
         new Map(
-          (
-            effectiveLayouts[
-              isAdminPreview ? adminPreview!.forcedBreakpoint : currentBreakpoint
-            ] ?? []
-          ).map((entry) => [
+          (effectiveLayouts[currentBreakpoint] ?? []).map((entry) => [
             entry.i,
             {
               i: entry.i,
               x: entry.x,
               y: entry.y,
               w: entry.w,
-              h: entry.h,
-            } satisfies GridLayoutItem,
+              h: entry.h
+            } satisfies GridLayoutItem
           ])
         )
       ),
-      ...searchNodeItems,
-    ],
-    [
-      filteredItems,
-      preset.slug,
-      liveLibraryAssetsByProductId,
-      searchNodeItems,
-      activeStoredBreakpoint,
-      effectiveLayouts,
-      isAdminPreview,
-      adminPreview,
-      currentBreakpoint,
-    ]
-  );
+      ...searchNodeItems
+    ];
+  }, [
+    filteredItems,
+    searchNodeItems,
+    isAdminPreview,
+    preset.slug,
+    liveLibraryAssetsByProductId,
+    activeStoredBreakpoint,
+    effectiveLayouts,
+    currentBreakpoint
+  ]);
 
   const tenantTheme = useMemo(
     () => readTenantTheme(currentTenantQuery.data?.tenant?.settings),
@@ -1071,7 +1109,7 @@ function DynamicGridCanvas({
           })}
         </div>
 
-        <main className="relative flex-1 px-4 pb-4">
+        <main className="relative flex-1 px-4 pb-4 w-full  mx-auto">
           <style>{`
             .layout .react-grid-placeholder {
               background: rgba(255, 255, 255, 0.25) !important;
@@ -1084,6 +1122,9 @@ function DynamicGridCanvas({
 
           <ResponsiveGridLayout
             className="layout"
+            breakpoint={
+              isAdminPreview ? adminPreview?.forcedBreakpoint : undefined
+            }
             layouts={effectiveLayouts}
             breakpoints={GRID_BREAKPOINTS}
             cols={GRID_COLS}
@@ -1139,17 +1180,37 @@ function DynamicGridCanvas({
                   ...current,
                   lg: sanitize('lg'),
                   sm: sanitize('sm'),
-                  xs: sanitize('xs'),
+                  xs: sanitize('xs')
                 };
               });
-              const byId = new Map(activeLayout.map((entry) => [entry.i, entry]));
+              const byId = new Map(
+                activeLayout.map((entry) => [entry.i, entry])
+              );
               setItems((prev) =>
                 prev.map((item) => {
                   const next = byId.get(item.i);
                   const basePosition = item.position ?? {
-                    lg: { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h },
-                    sm: { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h },
-                    xs: { i: item.i, x: item.x, y: item.y, w: item.w, h: item.h },
+                    lg: {
+                      i: item.i,
+                      x: item.x,
+                      y: item.y,
+                      w: item.w,
+                      h: item.h
+                    },
+                    sm: {
+                      i: item.i,
+                      x: item.x,
+                      y: item.y,
+                      w: item.w,
+                      h: item.h
+                    },
+                    xs: {
+                      i: item.i,
+                      x: item.x,
+                      y: item.y,
+                      w: item.w,
+                      h: item.h
+                    }
                   };
                   return next
                     ? {
@@ -1165,9 +1226,9 @@ function DynamicGridCanvas({
                             x: next.x,
                             y: next.y,
                             w: next.w,
-                            h: next.h,
-                          },
-                        },
+                            h: next.h
+                          }
+                        }
                       }
                     : item;
                 })
@@ -1193,7 +1254,7 @@ function DynamicGridCanvas({
                 libraryProductIds[0]
                   ? {
                       ...item.props,
-                      fallbackProductId: libraryProductIds[0],
+                      fallbackProductId: libraryProductIds[0]
                     }
                   : item.props;
 
@@ -1209,10 +1270,12 @@ function DynamicGridCanvas({
                     minH: 2,
                     static:
                       isSearchNode ||
-                      item.type === "library-asset-item" ||
+                      item.type === 'library-asset-item' ||
                       !isLayoutEditing
                   }}
-                  onMouseDownCapture={() => adminPreview?.onSelectNode?.(selectableNodeId)}
+                  onMouseDownCapture={() =>
+                    adminPreview?.onSelectNode?.(selectableNodeId)
+                  }
                   className={`overflow-hidden ${
                     isSearchNode
                       ? 'rounded-xl ring-1 ring-cyan-400/30'
@@ -1225,11 +1288,13 @@ function DynamicGridCanvas({
                       : ''
                   }`}
                 >
-                  {isAdminPreview && item.type !== "library-asset-item" ? (
+                  {isAdminPreview && item.type !== 'library-asset-item' ? (
                     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-b from-black/90 via-black/70 to-transparent px-3 py-2">
                       <div className="min-w-0">
                         <p className="truncate text-xs font-semibold text-white">
-                          {item.type.replace(/^node-/, '').replace(/[-_]/g, ' ')}
+                          {item.type
+                            .replace(/^node-/, '')
+                            .replace(/[-_]/g, ' ')}
                         </p>
                         <p className="truncate text-[10px] text-zinc-400">
                           {activeStoredBreakpoint.toUpperCase()}
@@ -1237,7 +1302,11 @@ function DynamicGridCanvas({
                       </div>
                     </div>
                   ) : null}
-                  <div className={isAdminPreview ? 'pointer-events-none h-full' : 'h-full'}>
+                  <div
+                    className={
+                      isAdminPreview ? 'pointer-events-none h-full' : 'h-full'
+                    }
+                  >
                     <NodeComponent
                       id={item.i}
                       type={item.type}
