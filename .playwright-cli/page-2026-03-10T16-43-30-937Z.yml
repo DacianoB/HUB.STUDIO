@@ -1,0 +1,80 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - navigation [ref=e4]:
+        - button "H" [ref=e5] [cursor=pointer]:
+          - generic [ref=e6]: H
+        - button "Explorar" [ref=e7] [cursor=pointer]:
+          - img [ref=e8]
+        - button "Notificacoes" [ref=e11] [cursor=pointer]:
+          - img [ref=e12]
+        - button "Mensagens" [ref=e15] [cursor=pointer]:
+          - img [ref=e16]
+        - button "Configuracoes" [ref=e20] [cursor=pointer]:
+          - img [ref=e21]
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - img [ref=e27]
+            - textbox "Buscar nodes..." [ref=e30]
+          - button "Entrar" [ref=e32] [cursor=pointer]:
+            - img [ref=e33]
+            - text: Entrar
+        - generic [ref=e36]:
+          - button "Home" [ref=e37] [cursor=pointer]
+          - button "Dashboard" [disabled] [ref=e38]
+          - button "Empreendimentos" [disabled] [ref=e39]
+        - main [ref=e40]:
+          - generic [ref=e41]:
+            - generic [ref=e44]:
+              - generic [ref=e45]:
+                - generic [ref=e46]:
+                  - button "Back to Home" [ref=e47] [cursor=pointer]:
+                    - img [ref=e48]
+                  - button "Like item" [ref=e50] [cursor=pointer]:
+                    - img [ref=e51]
+                - paragraph [ref=e54]: Home
+                - button "Save" [ref=e55] [cursor=pointer]
+              - generic [ref=e56]:
+                - generic [ref=e57]:
+                  - img "Item galeria 2"
+                  - button "Return to gallery" [ref=e59] [cursor=pointer]:
+                    - img [ref=e60]
+                - generic [ref=e62]:
+                  - generic [ref=e63]:
+                    - paragraph [ref=e64]: Item galeria 2
+                    - paragraph [ref=e65]: O Melhor em Acrílicos, Acrílicos, Construcao e Ferramentas e Construcao no Mercado Livre. Acrílicos no Mercado Livre com Preços Incríveis e 12x Sem Juros. Aproveite!
+                  - generic [ref=e67]:
+                    - generic [ref=e68]: 0 likes
+                    - generic [ref=e69]: 0 views
+            - link [ref=e72] [cursor=pointer]:
+              - /url: https://google.com
+            - link [ref=e77] [cursor=pointer]:
+              - /url: /g/cmmjbudhp000hnj3fmuk12fcg
+            - link [ref=e82] [cursor=pointer]:
+              - /url: /g/cmmje1rpz00299kdi7n426jwu
+            - link [ref=e87] [cursor=pointer]:
+              - /url: /g/cmmje1rrs002b9kdiorwxbgng
+            - link [ref=e92] [cursor=pointer]:
+              - /url: /g/cmmje1s9k002d9kdict8v1wwj
+              - img [ref=e96]
+            - link [ref=e101] [cursor=pointer]:
+              - /url: /g/cmmje1sbu002f9kdi5igk38vs
+              - img [ref=e105]
+            - link [ref=e110] [cursor=pointer]:
+              - /url: /g/cmmje1sdr002h9kdikvviv03x
+            - button "Open N.P EXP (medium_free_ads)" [ref=e115] [cursor=pointer]:
+              - button "Play video" [ref=e117]:
+                - img
+              - generic [ref=e118]: Preview
+            - link [ref=e121] [cursor=pointer]:
+              - /url: /g/cmmje1sxt002l9kdi66x3qsp4
+            - link [ref=e126] [cursor=pointer]:
+              - /url: /g/cmmje1szi002n9kdiqnxogadt
+            - link [ref=e131] [cursor=pointer]:
+              - /url: /g/cmmje1t1n002p9kdi5utoy6lg
+            - link [ref=e136] [cursor=pointer]:
+              - /url: /g/cmmje1t3m002r9kdianiiy1sm
+  - button "Open Next.js Dev Tools" [ref=e144] [cursor=pointer]:
+    - img [ref=e145]
+  - alert [ref=e148]

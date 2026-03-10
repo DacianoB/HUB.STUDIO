@@ -11,6 +11,7 @@ import {
 import { getServerAuthSession } from "~/server/auth";
 import {
   getTenantPagesConfig,
+  getTenantPagesConfigByTenantId,
   resolveTenantLibraryAssetRoute,
   resolveDynamicRoutePolicyFromConfig,
   resolveExistingPresetSlugFromConfig,
@@ -26,13 +27,14 @@ function normalizeSlug(slug: string) {
 
 export default async function CatchAllPage({ params }: CatchAllPageProps) {
   const session = await getServerAuthSession();
-  const tenantPagesConfig = await getTenantPagesConfig(session);
-  const runtimeConfig = tenantPagesConfig ?? pagesConfig;
-
   const { preset = [] } = await params;
   const requested = preset.join("/");
   const libraryAssetRoute = await resolveTenantLibraryAssetRoute(session, requested);
-  if (libraryAssetRoute) {
+  const tenantPagesConfig = libraryAssetRoute?.tenantId
+    ? await getTenantPagesConfigByTenantId(libraryAssetRoute.tenantId)
+    : await getTenantPagesConfig(session);
+  const runtimeConfig = tenantPagesConfig ?? pagesConfig;
+  if (libraryAssetRoute?.asset) {
     const canonicalHref = `/${libraryAssetRoute.canonicalSlug}`;
 
     if (libraryAssetRoute.requiresAuth && !session?.user) {
@@ -40,7 +42,26 @@ export default async function CatchAllPage({ params }: CatchAllPageProps) {
     }
 
     if (normalizeSlug(requested) !== normalizeSlug(libraryAssetRoute.canonicalSlug)) {
-      redirect(canonicalHref);
+      redirect(canonicalHref as any);
+    }
+
+    if (libraryAssetRoute.viewInGallery) {
+      return (
+        <main className="min-h-screen bg-black text-white">
+          <DynamicGrid
+            routePresetSlug={libraryAssetRoute.sourcePageSlug}
+            isAuthenticated={Boolean(session?.user)}
+            runtimePagesConfig={runtimeConfig}
+            embeddedLibraryAsset={{
+              assetId: libraryAssetRoute.assetId,
+              backHref: `/${libraryAssetRoute.sourcePageSlug}`,
+              pageName: libraryAssetRoute.pageName,
+              sourceNodeId: libraryAssetRoute.sourceNodeId ?? undefined,
+              asset: libraryAssetRoute.asset as any,
+            }}
+          />
+        </main>
+      );
     }
 
     return (
@@ -49,6 +70,7 @@ export default async function CatchAllPage({ params }: CatchAllPageProps) {
         backHref={`/${libraryAssetRoute.sourcePageSlug}`}
         pageName={libraryAssetRoute.pageName}
         runtimePagesConfig={runtimeConfig}
+        initialAsset={libraryAssetRoute.asset as any}
       />
     );
   }
@@ -83,13 +105,14 @@ export default async function CatchAllPage({ params }: CatchAllPageProps) {
 
 export async function generateMetadata({ params }: CatchAllPageProps): Promise<Metadata> {
   const session = await getServerAuthSession();
-  const tenantPagesConfig = await getTenantPagesConfig(session);
-  const runtimeConfig = tenantPagesConfig ?? pagesConfig;
-
   const { preset = [] } = await params;
   const requested = preset.join("/");
   const libraryAssetRoute = await resolveTenantLibraryAssetRoute(session, requested);
-  if (libraryAssetRoute) {
+  const tenantPagesConfig = libraryAssetRoute?.tenantId
+    ? await getTenantPagesConfigByTenantId(libraryAssetRoute.tenantId)
+    : await getTenantPagesConfig(session);
+  const runtimeConfig = tenantPagesConfig ?? pagesConfig;
+  if (libraryAssetRoute?.asset) {
     return {
       title: libraryAssetRoute.asset.title,
       description: libraryAssetRoute.asset.description ?? undefined,

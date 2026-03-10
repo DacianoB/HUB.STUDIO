@@ -49,6 +49,14 @@ export async function getTenantPagesConfig(
   const tenantId = session?.user?.activeTenantId;
   if (!tenantId) return null;
 
+  return getTenantPagesConfigByTenantId(tenantId);
+}
+
+export async function getTenantPagesConfigByTenantId(
+  tenantId: string,
+): Promise<PagesConfig | null> {
+  if (!tenantId) return null;
+
   const pages = await db.tenantNodePage.findMany({
     where: { tenantId },
     include: {
@@ -179,6 +187,7 @@ export async function resolveTenantLibraryAssetRoute(
   const requestedPageSlug = isScopedGalleryRoute
     ? segments.slice(0, markerIndex).join("/")
     : segments.slice(0, -1).join("/");
+  const isBareScopedGalleryRoute = isScopedGalleryRoute && !requestedPageSlug;
 
   if ((!isScopedGalleryRoute && !isLegacyGalleryRoute && segments.length < 2) || !assetId) {
     return null;
@@ -237,6 +246,7 @@ export async function resolveTenantLibraryAssetRoute(
 
   let matchedProductId: string | null = null;
   let matchedPage = null as (typeof candidatePages)[number] | null;
+  let matchedNode = null as (typeof candidatePages)[number]["items"][number] | null;
   for (const page of candidatePages) {
     if (
       !isScopedGalleryRoute &&
@@ -245,7 +255,11 @@ export async function resolveTenantLibraryAssetRoute(
     ) {
       continue;
     }
-    if (isScopedGalleryRoute && normalizeSlug(page.slug) !== requestedPageSlug) {
+    if (
+      isScopedGalleryRoute &&
+      !isBareScopedGalleryRoute &&
+      normalizeSlug(page.slug) !== requestedPageSlug
+    ) {
       continue;
     }
 
@@ -272,6 +286,7 @@ export async function resolveTenantLibraryAssetRoute(
       ) {
         matchedProductId = productId;
         matchedPage = page;
+        matchedNode = node;
         break;
       }
     }
@@ -282,6 +297,10 @@ export async function resolveTenantLibraryAssetRoute(
 
   const canonicalPageSlug = normalizeSlug(matchedPage.slug);
   const canonicalSlug = [canonicalPageSlug, "g", assetId].filter(Boolean).join("/");
+  const matchedNodeProps =
+    matchedNode?.props && typeof matchedNode.props === "object"
+      ? (matchedNode.props as Record<string, unknown>)
+      : {};
 
   return {
     pageSlug: canonicalPageSlug,
@@ -293,8 +312,11 @@ export async function resolveTenantLibraryAssetRoute(
     internalRoute: matchedPage.internalRoute,
     hidden: matchedPage.hidden,
     indexable: matchedPage.indexable,
+    tenantId: fallbackAsset.tenantId,
     assetId,
     productId: matchedProductId,
+    sourceNodeId: matchedNode?.nodeKey ?? null,
+    viewInGallery: Boolean(matchedNodeProps.viewInGallery),
     asset,
   };
 }

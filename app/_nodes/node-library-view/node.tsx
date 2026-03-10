@@ -34,9 +34,14 @@ function readItemLayout(props?: Record<string, unknown>): LibraryItemLayout {
   };
 }
 
+function readViewInGallery(props?: Record<string, unknown>) {
+  return Boolean(props?.viewInGallery);
+}
+
 export function DashboardNodeLibraryView({ props }: DashboardNodeLibraryViewProps) {
   const productId = readProductId(props);
   const itemLayout = readItemLayout(props);
+  const viewInGallery = readViewInGallery(props);
   const productQuery = api.products.byId.useQuery(
     { productId },
     { enabled: Boolean(productId) },
@@ -120,6 +125,10 @@ export function DashboardNodeLibraryView({ props }: DashboardNodeLibraryViewProp
           <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2">
             <span>Assets linked</span>
             <span>{assetCount}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+            <span>Open inside gallery</span>
+            <span>{viewInGallery ? "On" : "Off"}</span>
           </div>
         </div>
       </div>

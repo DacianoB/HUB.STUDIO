@@ -1,0 +1,87 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - navigation [ref=e4]:
+        - button "H" [ref=e5] [cursor=pointer]:
+          - generic [ref=e6]: H
+        - button "Explorar" [ref=e7] [cursor=pointer]:
+          - img [ref=e8]
+        - button "Notificacoes" [ref=e11] [cursor=pointer]:
+          - img [ref=e12]
+        - button "Mensagens" [ref=e15] [cursor=pointer]:
+          - img [ref=e16]
+        - button "Configuracoes" [ref=e20] [cursor=pointer]:
+          - img [ref=e21]
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - img [ref=e27]
+            - textbox "Buscar nodes..." [ref=e30]
+          - button "Entrar" [ref=e32] [cursor=pointer]:
+            - img [ref=e33]
+            - text: Entrar
+        - generic [ref=e36]:
+          - button "Home" [ref=e37] [cursor=pointer]
+          - button "Dashboard" [disabled] [ref=e38]
+          - button "Empreendimentos" [disabled] [ref=e39]
+        - main [ref=e40]:
+          - generic [ref=e41]:
+            - link [ref=e44] [cursor=pointer]:
+              - /url: https://google.com
+            - link [ref=e49] [cursor=pointer]:
+              - /url: /g/cmmjbudhp000hnj3fmuk12fcg
+            - generic [ref=e54]:
+              - generic [ref=e55]:
+                - button "Home" [ref=e56] [cursor=pointer]:
+                  - img [ref=e57]
+                  - text: Home
+                - generic "cmmje1rmd00279kditflhqggn" [ref=e59]: Item galeria 2
+              - generic [ref=e61]:
+                - generic [ref=e62]:
+                  - generic [ref=e64]:
+                    - paragraph [ref=e65]: Home
+                    - heading "Item galeria 2" [level=1] [ref=e66]
+                  - generic [ref=e67]:
+                    - img "Item galeria 2"
+                - complementary [ref=e68]:
+                  - generic [ref=e69]:
+                    - paragraph [ref=e70]: Info
+                    - generic [ref=e71]:
+                      - generic [ref=e72]: O Melhor em Acrílicos, Acrílicos, Construcao e Ferramentas e Construcao no Mercado Livre. Acrílicos no Mercado Livre com Preços Incríveis e 12x Sem Juros. Aproveite!
+                      - button "Curtir" [ref=e73] [cursor=pointer]:
+                        - img
+                        - text: Curtir
+                  - generic [ref=e74]:
+                    - generic [ref=e75]:
+                      - img [ref=e77]
+                      - generic [ref=e79]: "0"
+                    - generic [ref=e80]:
+                      - img [ref=e82]
+                      - generic [ref=e85]: "0"
+            - link [ref=e88] [cursor=pointer]:
+              - /url: /g/cmmje1rpz00299kdi7n426jwu
+            - link [ref=e93] [cursor=pointer]:
+              - /url: /g/cmmje1rrs002b9kdiorwxbgng
+            - link [ref=e98] [cursor=pointer]:
+              - /url: /g/cmmje1s9k002d9kdict8v1wwj
+              - img [ref=e102]
+            - link [ref=e107] [cursor=pointer]:
+              - /url: /g/cmmje1sbu002f9kdi5igk38vs
+              - img [ref=e111]
+            - link [ref=e116] [cursor=pointer]:
+              - /url: /g/cmmje1sdr002h9kdikvviv03x
+            - button "Open N.P EXP (medium_free_ads)" [ref=e121] [cursor=pointer]:
+              - button "Play video" [ref=e123]:
+                - img
+              - generic [ref=e124]: Preview
+            - link [ref=e127] [cursor=pointer]:
+              - /url: /g/cmmje1sxt002l9kdi66x3qsp4
+            - link [ref=e132] [cursor=pointer]:
+              - /url: /g/cmmje1szi002n9kdiqnxogadt
+            - link [ref=e137] [cursor=pointer]:
+              - /url: /g/cmmje1t1n002p9kdi5utoy6lg
+            - link [ref=e142] [cursor=pointer]:
+              - /url: /g/cmmje1t3m002r9kdianiiy1sm
+  - button "Open Next.js Dev Tools" [ref=e150] [cursor=pointer]:
+    - img [ref=e151]
+  - alert [ref=e154]

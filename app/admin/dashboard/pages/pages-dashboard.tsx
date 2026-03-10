@@ -289,6 +289,10 @@ function readLibraryItemLayout(
   };
 }
 
+function readLibraryViewInGallery(props?: Record<string, unknown> | null) {
+  return Boolean(props?.viewInGallery);
+}
+
 function hashLibrarySeed(input: string) {
   let value = 0;
   for (let index = 0; index < input.length; index += 1) {
@@ -322,6 +326,7 @@ function buildLibraryViewProps(
   productId: string,
   layoutStyle: LibraryLayoutStyle,
   randomness: LibraryRandomness,
+  viewInGallery: boolean,
   assets: LibraryAssetSnapshot[],
   itemLayout: LibraryItemLayout
 ) {
@@ -329,6 +334,7 @@ function buildLibraryViewProps(
     productId,
     layoutStyle,
     randomness,
+    viewInGallery,
     assets,
     itemLayout,
   };
@@ -657,6 +663,7 @@ export function PagesDashboard() {
   const [libraryRandomness, setLibraryRandomness] = useState<LibraryRandomness>(
     DEFAULT_LIBRARY_RANDOMNESS
   );
+  const [libraryViewInGallery, setLibraryViewInGallery] = useState(false);
   const [libraryWidthOptionsText, setLibraryWidthOptionsText] = useState("1");
   const [libraryHeightOptionsText, setLibraryHeightOptionsText] = useState("6,8,10");
   const [textNodeTitle, setTextNodeTitle] = useState(DEFAULT_TEXT_NODE_TITLE);
@@ -887,6 +894,7 @@ export function PagesDashboard() {
     setSelectedStepForNode("");
     setLibraryLayoutStyle(DEFAULT_LIBRARY_LAYOUT_STYLE);
     setLibraryRandomness(DEFAULT_LIBRARY_RANDOMNESS);
+    setLibraryViewInGallery(false);
     setLibraryWidthOptionsText("1");
     setLibraryHeightOptionsText("6,8,10");
     setTextNodeTitle(DEFAULT_TEXT_NODE_TITLE);
@@ -919,6 +927,7 @@ export function PagesDashboard() {
     );
     setLibraryLayoutStyle(readLibraryLayoutStyle(props));
     setLibraryRandomness(readLibraryRandomness(props));
+    setLibraryViewInGallery(readLibraryViewInGallery(props));
     const itemLayout = readLibraryItemLayout(props);
     setLibraryWidthOptionsText(itemLayout.w.join(","));
     setLibraryHeightOptionsText(itemLayout.h.join(","));
@@ -1020,6 +1029,7 @@ export function PagesDashboard() {
             selectedProductForNode,
             DEFAULT_LIBRARY_LAYOUT_STYLE,
             DEFAULT_LIBRARY_RANDOMNESS,
+            false,
             selectedProductLibraryAssets,
             { w: [1], h: [6, 8, 10] }
           )
@@ -1469,6 +1479,7 @@ export function PagesDashboard() {
                                   selectedProductForNode,
                                   DEFAULT_LIBRARY_LAYOUT_STYLE,
                                   DEFAULT_LIBRARY_RANDOMNESS,
+                                  false,
                                   selectedProductLibraryAssets,
                                   { w: [1], h: [6, 8, 10] }
                                 ),
@@ -1721,6 +1732,16 @@ export function PagesDashboard() {
                                   Use comma-separated values like `w: [1]` and `h: [6,8,10]`.
                                   Each library item is randomized using these exact size options.
                                 </p>
+                                <label className="mt-4 flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={libraryViewInGallery}
+                                    onChange={(event) =>
+                                      setLibraryViewInGallery(event.target.checked)
+                                    }
+                                  />
+                                  Open selected item inside the gallery
+                                </label>
                               </div>
 
                               <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -1732,7 +1753,8 @@ export function PagesDashboard() {
                                 </p>
                                 <p className="mt-1 text-sm text-zinc-400">
                                   This node renders the selected product library as real page-grid
-                                  items and links every asset to its own `/{selectedPage.slug}/{'{'}itemId{'}'}` page.
+                                  items. When the option above is active, opening an item keeps it
+                                  in the same gallery page and moves the selected asset to the top.
                                 </p>
                               </div>
                             </>
@@ -1967,6 +1989,7 @@ export function PagesDashboard() {
                                     selectedProductForNode,
                                     libraryLayoutStyle,
                                     libraryRandomness,
+                                    libraryViewInGallery,
                                     selectedProductLibraryAssets,
                                     {
                                       w: parseLibraryOptionsInput(

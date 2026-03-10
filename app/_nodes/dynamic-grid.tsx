@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { LayoutGroup, motion } from 'framer-motion';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
@@ -11,6 +12,7 @@ import componentsCatalog from '~/app/_nodes/components.json';
 import { pagesConfig } from '~/app/_nodes/pages';
 import type { PagesConfig, Preset } from '~/app/_nodes/schemas';
 import { readTenantBranding } from '~/app/_nodes/tenant-theme';
+import { LibraryAssetDetailPanel } from '~/app/library/library-asset-detail';
 import { api } from '~/trpc/react';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -19,6 +21,13 @@ type DynamicGridProps = {
   routePresetSlug?: string;
   isAuthenticated?: boolean;
   runtimePagesConfig?: PagesConfig;
+  embeddedLibraryAsset?: {
+    assetId: string;
+    pageName: string;
+    backHref: string;
+    sourceNodeId?: string;
+    asset?: Record<string, unknown>;
+  };
   adminPreview?: {
     forcedBreakpoint: StoredLayoutBreakpoint;
     layoutOverrides: Record<StoredLayoutBreakpoint, GridLayoutItem[]>;
@@ -282,7 +291,8 @@ function expandLibraryViewItems(
   sourcePageSlug?: string,
   liveAssetsByProductId?: Map<string, LibraryAssetSnapshot[]>,
   breakpoint: StoredLayoutBreakpoint = 'lg',
-  layoutById?: Map<string, GridLayoutItem>
+  layoutById?: Map<string, GridLayoutItem>,
+  embeddedLibraryAsset?: DynamicGridProps['embeddedLibraryAsset']
 ) {
   const regularItems: RuntimeItem[] = [];
   const librarySources: RuntimeItem[] = [];
@@ -293,6 +303,13 @@ function expandLibraryViewItems(
       : breakpoint === 'sm'
         ? GRID_COLS.sm
         : GRID_COLS.xs;
+  const detailWidth =
+    breakpoint === 'lg'
+      ? Math.max(3, activeCols - 2)
+      : breakpoint === 'sm'
+        ? Math.max(2, activeCols - 1)
+        : activeCols;
+  const detailHeight = breakpoint === 'lg' ? 20 : breakpoint === 'sm' ? 22 : 20;
 
   for (const item of items) {
     if (isLibraryViewNodeType(item.type)) {
@@ -342,9 +359,30 @@ function expandLibraryViewItems(
 
   const expandedItems = librarySources.flatMap((item) => {
     const productId = readLibraryProductId(item.props);
-    const assets = productId
+    const fallbackAssets = readLibraryAssets(item.props);
+    const liveAssets = productId
       ? (liveAssetsByProductId?.get(productId) ?? [])
-      : readLibraryAssets(item.props);
+      : [];
+    const assets =
+      liveAssets.length > 0 || !productId
+        ? liveAssets.length > 0
+          ? liveAssets
+          : fallbackAssets
+        : fallbackAssets;
+    const shouldPromoteEmbeddedAsset =
+      Boolean(embeddedLibraryAsset?.assetId) &&
+      (!embeddedLibraryAsset?.sourceNodeId ||
+        embeddedLibraryAsset.sourceNodeId === item.i);
+    const orderedAssets = shouldPromoteEmbeddedAsset
+      ? [
+          ...assets.filter(
+            (asset) => asset.id === embeddedLibraryAsset?.assetId
+          ),
+          ...assets.filter(
+            (asset) => asset.id !== embeddedLibraryAsset?.assetId
+          )
+        ]
+      : assets;
     const basePosition = layoutById?.get(item.i) ??
       item.position?.[breakpoint] ?? {
         i: item.i,
@@ -359,7 +397,35 @@ function expandLibraryViewItems(
     );
     const heights = itemLayout.h.map((value) => Math.max(4, value));
 
-    return assets.map((asset, index) => {
+    return orderedAssets.map((asset, index) => {
+      if (
+        embeddedLibraryAsset?.assetId === asset.id &&
+        (!embeddedLibraryAsset.sourceNodeId ||
+          embeddedLibraryAsset.sourceNodeId === item.i)
+      ) {
+        const placement = findPlacement(
+          detailWidth,
+          detailHeight,
+          basePosition.y
+        );
+        occupy(placement.x, placement.y, detailWidth, detailHeight);
+        return {
+          i: `${item.i}::asset-detail::${asset.id}`,
+          type: 'library-asset-detail',
+          x: placement.x,
+          y: placement.y,
+          w: detailWidth,
+          h: detailHeight,
+          props: {
+            assetId: asset.id,
+            backHref: embeddedLibraryAsset.backHref,
+            pageName: embeddedLibraryAsset.pageName,
+            sourceNodeId: item.i,
+            initialAsset: embeddedLibraryAsset.asset
+          }
+        } satisfies RuntimeItem;
+      }
+
       const seed = hashLibrarySeed(`${item.i}:${asset.id}:${index}`);
       const w = widths[seed % widths.length] ?? 1;
       const h = heights[seed % heights.length] ?? basePosition.h;
@@ -516,10 +582,38 @@ function buildLayouts(items: RuntimeItem[]) {
   });
 }
 
+function getLibraryTransitionLayoutId(item: RuntimeItem) {
+  if (item.type === 'library-asset-detail') {
+    const assetId =
+      item.props && typeof item.props === 'object'
+        ? (item.props as Record<string, unknown>).assetId
+        : undefined;
+    return typeof assetId === 'string' && assetId
+      ? `library-asset-${assetId}`
+      : undefined;
+  }
+
+  if (item.type === 'library-asset-item') {
+    const asset =
+      item.props && typeof item.props === 'object'
+        ? ((item.props as Record<string, unknown>).asset as
+            | Record<string, unknown>
+            | undefined)
+        : undefined;
+    const assetId = asset?.id;
+    return typeof assetId === 'string' && assetId
+      ? `library-asset-${assetId}`
+      : undefined;
+  }
+
+  return undefined;
+}
+
 export function DynamicGrid({
   routePresetSlug = '',
   isAuthenticated = false,
   runtimePagesConfig,
+  embeddedLibraryAsset,
   adminPreview
 }: DynamicGridProps) {
   const activePagesConfig = runtimePagesConfig ?? pagesConfig;
@@ -547,6 +641,7 @@ export function DynamicGrid({
       preset={preset}
       isAuthenticated={isAuthenticated}
       runtimePagesConfig={activePagesConfig}
+      embeddedLibraryAsset={embeddedLibraryAsset}
       adminPreview={adminPreview}
     />
   );
@@ -556,11 +651,13 @@ function DynamicGridCanvas({
   preset,
   isAuthenticated,
   runtimePagesConfig,
+  embeddedLibraryAsset,
   adminPreview
 }: {
   preset: Preset;
   isAuthenticated: boolean;
   runtimePagesConfig: PagesConfig;
+  embeddedLibraryAsset?: DynamicGridProps['embeddedLibraryAsset'];
   adminPreview?: DynamicGridProps['adminPreview'];
 }) {
   const router = useRouter();
@@ -798,7 +895,8 @@ function DynamicGridCanvas({
               h: entry.h
             } satisfies GridLayoutItem
           ])
-        )
+        ),
+        embeddedLibraryAsset
       ),
       ...searchNodeItems
     ];
@@ -810,7 +908,8 @@ function DynamicGridCanvas({
     liveLibraryAssetsByProductId,
     activeStoredBreakpoint,
     effectiveLayouts,
-    currentBreakpoint
+    currentBreakpoint,
+    embeddedLibraryAsset
   ]);
 
   const tenantBranding = useMemo(
@@ -944,7 +1043,7 @@ function DynamicGridCanvas({
         })}
       </div>
 
-      <main className="relative flex-1 px-4 pb-4 w-full  mx-auto">
+      <main className="relative mx-auto flex-1 w-full px-4 pb-4">
         <style>{`
             .layout .react-grid-placeholder {
               background: rgba(255, 255, 255, 0.25) !important;
@@ -958,207 +1057,250 @@ function DynamicGridCanvas({
             }
           `}</style>
 
-        <ResponsiveGridLayout
-          className="layout"
-          breakpoint={
-            isAdminPreview ? adminPreview?.forcedBreakpoint : undefined
-          }
-          layouts={effectiveLayouts}
-          breakpoints={GRID_BREAKPOINTS}
-          cols={GRID_COLS}
-          isDraggable={isLayoutEditing}
-          isResizable={isLayoutEditing}
-          rowHeight={30}
-          margin={[16, 16]}
-          onBreakpointChange={(breakpoint) =>
-            setCurrentBreakpoint(breakpoint as keyof typeof GRID_BREAKPOINTS)
-          }
-          onLayoutChange={(_, allLayouts) => {
-            const itemIds = new Set(filteredItems.map((entry) => entry.i));
-            const activeLayout = (allLayouts[currentBreakpoint] ??
-              allLayouts.lg ??
-              []) as Array<{
-              i: string;
-              x: number;
-              y: number;
-              w: number;
-              h: number;
-            }>;
-            if (adminPreview?.onLayoutChange) {
-              const nextLayout = filterStoredLayoutEntries(
-                (allLayouts[adminPreview.forcedBreakpoint] ?? []) as Array<{
-                  i: string;
-                  x: number;
-                  y: number;
-                  w: number;
-                  h: number;
-                }>,
-                itemIds
-              );
-              adminPreview.onLayoutChange(
-                adminPreview.forcedBreakpoint,
-                nextLayout
-              );
-              return;
+        <LayoutGroup id={`grid-${preset.slug || 'root'}`}>
+          <ResponsiveGridLayout
+            className="layout"
+            breakpoint={
+              isAdminPreview ? adminPreview?.forcedBreakpoint : undefined
             }
-            if (!isLayoutEditing) return;
-            setLayouts((current) => {
-              const sanitize = (
-                breakpoint: keyof typeof current
-              ): GridLayoutItem[] => {
-                const sourceLayout = (allLayouts[breakpoint] ?? []) as Array<{
-                  i: string;
-                  x: number;
-                  y: number;
-                  w: number;
-                  h: number;
-                }>;
-                return filterStoredLayoutEntries(sourceLayout, itemIds);
-              };
-
-              return {
-                ...current,
-                lg: sanitize('lg'),
-                sm: sanitize('sm'),
-                xs: sanitize('xs')
-              };
-            });
-            const byId = new Map(activeLayout.map((entry) => [entry.i, entry]));
-            setItems((prev) =>
-              prev.map((item) => {
-                const next = byId.get(item.i);
-                const basePosition = item.position ?? {
-                  lg: {
-                    i: item.i,
-                    x: item.x,
-                    y: item.y,
-                    w: item.w,
-                    h: item.h
-                  },
-                  sm: {
-                    i: item.i,
-                    x: item.x,
-                    y: item.y,
-                    w: item.w,
-                    h: item.h
-                  },
-                  xs: {
-                    i: item.i,
-                    x: item.x,
-                    y: item.y,
-                    w: item.w,
-                    h: item.h
-                  }
+            layouts={effectiveLayouts}
+            breakpoints={GRID_BREAKPOINTS}
+            cols={GRID_COLS}
+            isDraggable={isLayoutEditing}
+            isResizable={isLayoutEditing}
+            rowHeight={30}
+            margin={[16, 16]}
+            onBreakpointChange={(breakpoint) =>
+              setCurrentBreakpoint(breakpoint as keyof typeof GRID_BREAKPOINTS)
+            }
+            onLayoutChange={(_, allLayouts) => {
+              const itemIds = new Set(filteredItems.map((entry) => entry.i));
+              const activeLayout = (allLayouts[currentBreakpoint] ??
+                allLayouts.lg ??
+                []) as Array<{
+                i: string;
+                x: number;
+                y: number;
+                w: number;
+                h: number;
+              }>;
+              if (adminPreview?.onLayoutChange) {
+                const nextLayout = filterStoredLayoutEntries(
+                  (allLayouts[adminPreview.forcedBreakpoint] ?? []) as Array<{
+                    i: string;
+                    x: number;
+                    y: number;
+                    w: number;
+                    h: number;
+                  }>,
+                  itemIds
+                );
+                adminPreview.onLayoutChange(
+                  adminPreview.forcedBreakpoint,
+                  nextLayout
+                );
+                return;
+              }
+              if (!isLayoutEditing) return;
+              setLayouts((current) => {
+                const sanitize = (
+                  breakpoint: keyof typeof current
+                ): GridLayoutItem[] => {
+                  const sourceLayout = (allLayouts[breakpoint] ?? []) as Array<{
+                    i: string;
+                    x: number;
+                    y: number;
+                    w: number;
+                    h: number;
+                  }>;
+                  return filterStoredLayoutEntries(sourceLayout, itemIds);
                 };
-                return next
-                  ? {
-                      ...item,
-                      x: next.x,
-                      y: next.y,
-                      w: next.w,
-                      h: next.h,
-                      position: {
-                        ...basePosition,
-                        [activeStoredBreakpoint]: {
-                          i: item.i,
-                          x: next.x,
-                          y: next.y,
-                          w: next.w,
-                          h: next.h
+
+                return {
+                  ...current,
+                  lg: sanitize('lg'),
+                  sm: sanitize('sm'),
+                  xs: sanitize('xs')
+                };
+              });
+              const byId = new Map(
+                activeLayout.map((entry) => [entry.i, entry])
+              );
+              setItems((prev) =>
+                prev.map((item) => {
+                  const next = byId.get(item.i);
+                  const basePosition = item.position ?? {
+                    lg: {
+                      i: item.i,
+                      x: item.x,
+                      y: item.y,
+                      w: item.w,
+                      h: item.h
+                    },
+                    sm: {
+                      i: item.i,
+                      x: item.x,
+                      y: item.y,
+                      w: item.w,
+                      h: item.h
+                    },
+                    xs: {
+                      i: item.i,
+                      x: item.x,
+                      y: item.y,
+                      w: item.w,
+                      h: item.h
+                    }
+                  };
+                  return next
+                    ? {
+                        ...item,
+                        x: next.x,
+                        y: next.y,
+                        w: next.w,
+                        h: next.h,
+                        position: {
+                          ...basePosition,
+                          [activeStoredBreakpoint]: {
+                            i: item.i,
+                            x: next.x,
+                            y: next.y,
+                            w: next.w,
+                            h: next.h
+                          }
                         }
                       }
+                    : item;
+                })
+              );
+            }}
+          >
+            {gridItemsToRender.map((item) => {
+              const NodeComponent = ComponentRegistry[item.type];
+              const isSearchNode = item.i.startsWith('search-node-');
+              const sourceNodeId =
+                item.props && typeof item.props === 'object'
+                  ? (item.props as Record<string, unknown>).sourceNodeId
+                  : undefined;
+              const selectableNodeId =
+                typeof sourceNodeId === 'string' ? sourceNodeId : item.i;
+              const nodeProductId =
+                item.props && typeof item.props === 'object'
+                  ? (item.props as Record<string, unknown>).productId
+                  : undefined;
+              const nodeProps =
+                isTextNodeType(item.type) &&
+                typeof nodeProductId !== 'string' &&
+                libraryProductIds[0]
+                  ? {
+                      ...item.props,
+                      fallbackProductId: libraryProductIds[0]
                     }
-                  : item;
-              })
-            );
-          }}
-        >
-          {gridItemsToRender.map((item) => {
-            const NodeComponent = ComponentRegistry[item.type];
-            const isSearchNode = item.i.startsWith('search-node-');
-            const sourceNodeId =
-              item.props && typeof item.props === 'object'
-                ? (item.props as Record<string, unknown>).sourceNodeId
-                : undefined;
-            const selectableNodeId =
-              typeof sourceNodeId === 'string' ? sourceNodeId : item.i;
-            const nodeProductId =
-              item.props && typeof item.props === 'object'
-                ? (item.props as Record<string, unknown>).productId
-                : undefined;
-            const nodeProps =
-              isTextNodeType(item.type) &&
-              typeof nodeProductId !== 'string' &&
-              libraryProductIds[0]
-                ? {
-                    ...item.props,
-                    fallbackProductId: libraryProductIds[0]
-                  }
-                : item.props;
+                  : item.props;
+              const layoutId = getLibraryTransitionLayoutId(item);
 
-            return (
-              <div
-                key={item.i}
-                data-grid={{
-                  x: item.x,
-                  y: item.y,
-                  w: item.w,
-                  h: item.h,
-                  minW: 1,
-                  minH: 2,
-                  static:
-                    isSearchNode ||
-                    item.type === 'library-asset-item' ||
-                    !isLayoutEditing
-                }}
-                onMouseDownCapture={() =>
-                  adminPreview?.onSelectNode?.(selectableNodeId)
-                }
-                className={`overflow-hidden animate-fade-in-up  ${
-                  isSearchNode
-                    ? 'rounded-xl ring-1 ring-cyan-400/30'
-                    : isLayoutEditing
-                      ? 'rounded-xl ring-1 ring-amber-500/20'
-                      : ''
-                } ${
-                  adminPreview?.selectedNodeId === selectableNodeId
-                    ? 'ring-2 ring-sky-400/50'
-                    : ''
-                }`}
-                style={{
-                  borderRadius: 'var(--tenant-node-radius)',
-                  transform: 'translateY(10px)',
-                  transition:
-                    'opacity 0.3s ease-in-out, transform 0.3s ease-in-out'
-                }}
-              >
-                {isAdminPreview && item.type !== 'library-asset-item' ? (
-                  <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-b from-black/90 via-black/70 to-transparent px-3 py-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-semibold text-white">
-                        {item.type.replace(/^node-/, '').replace(/[-_]/g, ' ')}
-                      </p>
-                      <p className="truncate text-[10px] text-zinc-400">
-                        {activeStoredBreakpoint.toUpperCase()}
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
+              return (
                 <div
-                  className={
-                    isAdminPreview ? 'pointer-events-none h-full' : 'h-full'
+                  key={item.i}
+                  data-grid={{
+                    x: item.x,
+                    y: item.y,
+                    w: item.w,
+                    h: item.h,
+                    minW: 1,
+                    minH: 2,
+                    static:
+                      isSearchNode ||
+                      item.type === 'library-asset-item' ||
+                      item.type === 'library-asset-detail' ||
+                      !isLayoutEditing
+                  }}
+                  onMouseDownCapture={() =>
+                    adminPreview?.onSelectNode?.(selectableNodeId)
                   }
+                  className={`overflow-hidden animate-fade-in-up ${
+                    isSearchNode
+                      ? 'rounded-xl ring-1 ring-cyan-400/30'
+                      : isLayoutEditing
+                        ? 'rounded-xl ring-1 ring-amber-500/20'
+                        : ''
+                  } ${
+                    adminPreview?.selectedNodeId === selectableNodeId
+                      ? 'ring-2 ring-sky-400/50'
+                      : ''
+                  }`}
+                  style={{
+                    borderRadius: 'var(--tenant-node-radius)'
+                  }}
                 >
-                  <NodeComponent
-                    id={item.i}
-                    type={item.type}
-                    props={nodeProps}
-                  />
+                  <motion.div
+                    layout
+                    layoutId={layoutId}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 420,
+                      damping: 30
+                    }}
+                    className="relative h-full w-full"
+                  >
+                    {isAdminPreview &&
+                    item.type !== 'library-asset-item' &&
+                    item.type !== 'library-asset-detail' ? (
+                      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-b from-black/90 via-black/70 to-transparent px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-white">
+                            {item.type
+                              .replace(/^node-/, '')
+                              .replace(/[-_]/g, ' ')}
+                          </p>
+                          <p className="truncate text-[10px] text-zinc-400">
+                            {activeStoredBreakpoint.toUpperCase()}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div
+                      className={
+                        isAdminPreview ? 'pointer-events-none h-full' : 'h-full'
+                      }
+                    >
+                      {item.type === 'library-asset-detail' ? (
+                        <LibraryAssetDetailPanel
+                          assetId={String(
+                            (item.props as Record<string, unknown>)?.assetId ??
+                              ''
+                          )}
+                          backHref={String(
+                            (item.props as Record<string, unknown>)?.backHref ??
+                              '/'
+                          )}
+                          pageName={String(
+                            (item.props as Record<string, unknown>)?.pageName ??
+                              'Gallery'
+                          )}
+                          embedded
+                          inGrid
+                          initialAsset={
+                            (item.props as Record<string, unknown>)
+                              ?.initialAsset as
+                              | Record<string, unknown>
+                              | undefined as any
+                          }
+                        />
+                      ) : (
+                        <NodeComponent
+                          id={item.i}
+                          type={item.type}
+                          props={nodeProps}
+                        />
+                      )}
+                    </div>
+                  </motion.div>
                 </div>
-              </div>
-            );
-          })}
-        </ResponsiveGridLayout>
+              );
+            })}
+          </ResponsiveGridLayout>
+        </LayoutGroup>
       </main>
     </TenantAppChrome>
   );

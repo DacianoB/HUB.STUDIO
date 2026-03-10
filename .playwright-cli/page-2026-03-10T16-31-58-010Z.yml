@@ -1,0 +1,61 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - navigation [ref=e4]:
+        - button "H" [ref=e5] [cursor=pointer]:
+          - generic [ref=e6]: H
+        - button "Explorar" [ref=e7] [cursor=pointer]:
+          - img [ref=e8]
+        - button "Notificacoes" [ref=e11] [cursor=pointer]:
+          - img [ref=e12]
+        - button "Mensagens" [ref=e15] [cursor=pointer]:
+          - img [ref=e16]
+        - button "Configuracoes" [ref=e20] [cursor=pointer]:
+          - img [ref=e21]
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - img [ref=e27]
+            - textbox "Buscar nodes..." [ref=e30]
+          - button "Entrar" [ref=e32] [cursor=pointer]:
+            - img [ref=e33]
+            - text: Entrar
+        - generic [ref=e36]:
+          - button "Home" [ref=e37] [cursor=pointer]
+          - button "Dashboard" [disabled] [ref=e38]
+          - button "Empreendimentos" [disabled] [ref=e39]
+        - main [ref=e40]:
+          - generic [ref=e41]:
+            - link [ref=e44] [cursor=pointer]:
+              - /url: https://google.com
+            - link [ref=e49] [cursor=pointer]:
+              - /url: /g/cmmjbudhp000hnj3fmuk12fcg
+            - link [ref=e54] [cursor=pointer]:
+              - /url: /g/cmmje1rmd00279kditflhqggn
+            - link [ref=e59] [cursor=pointer]:
+              - /url: /g/cmmje1rpz00299kdi7n426jwu
+            - link [ref=e64] [cursor=pointer]:
+              - /url: /g/cmmje1rrs002b9kdiorwxbgng
+            - link [ref=e69] [cursor=pointer]:
+              - /url: /g/cmmje1s9k002d9kdict8v1wwj
+              - img [ref=e73]
+            - link [ref=e78] [cursor=pointer]:
+              - /url: /g/cmmje1sbu002f9kdi5igk38vs
+              - img [ref=e82]
+            - link [ref=e87] [cursor=pointer]:
+              - /url: /g/cmmje1sdr002h9kdikvviv03x
+            - button "Open N.P EXP (medium_free_ads)" [ref=e92] [cursor=pointer]:
+              - button "Play video" [ref=e94]:
+                - img
+              - generic [ref=e95]: Preview
+            - link [ref=e98] [cursor=pointer]:
+              - /url: /g/cmmje1sxt002l9kdi66x3qsp4
+            - link [ref=e103] [cursor=pointer]:
+              - /url: /g/cmmje1szi002n9kdiqnxogadt
+            - link [ref=e108] [cursor=pointer]:
+              - /url: /g/cmmje1t1n002p9kdi5utoy6lg
+            - link [ref=e113] [cursor=pointer]:
+              - /url: /g/cmmje1t3m002r9kdianiiy1sm
+  - button "Open Next.js Dev Tools" [ref=e121] [cursor=pointer]:
+    - img [ref=e122]
+  - alert [ref=e125]
