@@ -474,6 +474,12 @@ export const productsRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const normalizedPrice = input.isFree ? null : input.priceCents ?? 0;
+      if (!input.isFree && normalizedPrice <= 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Paid products must have a price greater than zero.",
+        });
+      }
       const enabledByTenant = await readTenantEnabledModules(ctx.db, ctx.tenantId);
       const allowedModules = input.modules.filter(
         (module) => module.isEnabled && enabledByTenant.has(module.moduleType),
@@ -496,7 +502,7 @@ export const productsRouter = createTRPCRouter({
             isVisible: input.isVisible,
             isFree: input.isFree,
             priceCents: normalizedPrice,
-            currency: input.currency,
+            currency: input.currency.toUpperCase(),
             galleryOnly: input.galleryOnly,
             lockSequentialSteps: lockSequential,
             metadata: input.metadata,
@@ -550,8 +556,13 @@ export const productsRouter = createTRPCRouter({
 
       const { productId, ...payload } = input;
       const nextIsFree = payload.isFree ?? existing.isFree;
-      const nextPrice =
-        nextIsFree && payload.priceCents === undefined ? null : payload.priceCents;
+      const nextPrice = nextIsFree ? null : payload.priceCents ?? existing.priceCents ?? 0;
+      if (!nextIsFree && nextPrice <= 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Paid products must have a price greater than zero.",
+        });
+      }
       const enabledByTenant = await readTenantEnabledModules(ctx.db, ctx.tenantId);
       const allowedModules = (payload.modules ?? []).filter(
         (module) => module.isEnabled && enabledByTenant.has(module.moduleType),
@@ -569,7 +580,7 @@ export const productsRouter = createTRPCRouter({
             isVisible: payload.isVisible,
             isFree: payload.isFree,
             priceCents: nextPrice,
-            currency: payload.currency,
+            currency: payload.currency?.toUpperCase(),
             galleryOnly: payload.galleryOnly,
             lockSequentialSteps: payload.lockSequentialSteps,
             metadata: payload.metadata,

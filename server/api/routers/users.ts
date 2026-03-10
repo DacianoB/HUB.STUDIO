@@ -21,6 +21,57 @@ export const usersRouter = createTRPCRouter({
     });
   }),
 
+  updateMember: tenantAdminProcedure
+    .input(
+      z
+        .object({
+          userId: z.string().cuid(),
+          role: z.enum(["ADMIN", "INSTRUCTOR", "MEMBER"]).optional(),
+          status: z.enum(["ACTIVE", "PENDING", "BLOCKED"]).optional(),
+        })
+        .refine((value) => value.role || value.status, {
+          message: "Provide at least one change.",
+        }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const membership = await ctx.db.tenantMembership.findUnique({
+        where: {
+          tenantId_userId: {
+            tenantId: ctx.tenantId,
+            userId: input.userId,
+          },
+        },
+      });
+
+      if (!membership) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Member not found." });
+      }
+
+      if (
+        membership.role === "OWNER" &&
+        ((input.role && input.role !== "OWNER") ||
+          (input.status && input.status !== membership.status))
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Owner membership cannot be changed from this screen.",
+        });
+      }
+
+      return ctx.db.tenantMembership.update({
+        where: {
+          tenantId_userId: {
+            tenantId: ctx.tenantId,
+            userId: input.userId,
+          },
+        },
+        data: {
+          role: input.role,
+          status: input.status,
+        },
+      });
+    }),
+
   listJoinRequests: tenantAdminProcedure.query(async ({ ctx }) => {
     const [pendingMemberships, pendingInvites] = await Promise.all([
       ctx.db.tenantMembership.findMany({
@@ -126,6 +177,42 @@ export const usersRouter = createTRPCRouter({
           canDownload: input.canDownload,
           canEditProgress: input.canEditProgress,
           grantedByUserId: ctx.session!.user.id,
+        },
+      });
+    }),
+
+  revokeProductAccess: tenantAdminProcedure
+    .input(
+      z.object({
+        userId: z.string().cuid(),
+        productId: z.string().cuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const access = await ctx.db.userProductAccess.findUnique({
+        where: {
+          tenantId_userId_productId: {
+            tenantId: ctx.tenantId,
+            userId: input.userId,
+            productId: input.productId,
+          },
+        },
+      });
+
+      if (!access) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Product access record not found.",
+        });
+      }
+
+      return ctx.db.userProductAccess.delete({
+        where: {
+          tenantId_userId_productId: {
+            tenantId: ctx.tenantId,
+            userId: input.userId,
+            productId: input.productId,
+          },
         },
       });
     }),

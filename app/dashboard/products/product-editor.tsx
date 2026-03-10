@@ -71,6 +71,9 @@ const MODULE_COPY: Record<
   },
 };
 
+const DEFAULT_PRODUCT_CURRENCY = "USD";
+type PricingMode = "FREE" | "PAID";
+
 function readStepMetadata(step: { metadata?: unknown }): StepMetadata {
   if (!step.metadata || typeof step.metadata !== "object") return {};
   return step.metadata as StepMetadata;
@@ -96,6 +99,29 @@ function titleFromFileName(fileName: string) {
   const trimmed = fileName.trim();
   const withoutExtension = trimmed.replace(/\.[^.]+$/, "").trim();
   return withoutExtension || trimmed || "Untitled file";
+}
+
+function normalizeCurrencyCode(value: string | null | undefined) {
+  const normalized = (value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, "");
+  return normalized || DEFAULT_PRODUCT_CURRENCY;
+}
+
+function formatPriceInput(priceCents: number | null | undefined) {
+  if (priceCents == null) return "";
+  return (priceCents / 100).toFixed(2);
+}
+
+function parsePriceInputToCents(value: string) {
+  const normalized = value.replace(",", ".").replace(/[^\d.]/g, "").trim();
+  if (!normalized) return null;
+  if (!/^\d+(\.\d{0,2})?$/.test(normalized)) return null;
+
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed * 100);
 }
 
 function messageFromUploadResponse(response: Response, text: string) {
@@ -252,6 +278,9 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const [subtitle, setSubtitle] = useState("");
   const [description, setDescription] = useState("");
   const [productType, setProductType] = useState<ProductType>("COURSE");
+  const [pricingMode, setPricingMode] = useState<PricingMode>("FREE");
+  const [priceInput, setPriceInput] = useState("");
+  const [currency, setCurrency] = useState(DEFAULT_PRODUCT_CURRENCY);
   const [createDemoCourseContent, setCreateDemoCourseContent] = useState(false);
   const [selectedModules, setSelectedModules] = useState<Record<ProductModuleType, boolean>>({
     LIBRARY: true,
@@ -300,6 +329,9 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     setSubtitle(product.subtitle ?? "");
     setDescription(product.description ?? "");
     setProductType(product.type as ProductType);
+    setPricingMode(product.isFree ? "FREE" : "PAID");
+    setPriceInput(formatPriceInput(product.priceCents));
+    setCurrency(normalizeCurrencyCode(product.currency));
 
     const byType = new Map(
       (product.moduleConfigs ?? []).map((moduleConfig) => [
@@ -400,6 +432,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     () => galleryAssets.find((asset) => asset.id === selectedGalleryAssetId) ?? null,
     [galleryAssets, selectedGalleryAssetId]
   );
+  const isFreeProduct = pricingMode === "FREE";
+  const normalizedCurrency = normalizeCurrencyCode(currency);
+  const parsedPriceCents = useMemo(() => parsePriceInputToCents(priceInput), [priceInput]);
+  const isPriceValid =
+    isFreeProduct || (parsedPriceCents !== null && parsedPriceCents > 0 && Boolean(normalizedCurrency));
 
   useEffect(() => {
     setLibraryUploadError("");
@@ -521,6 +558,8 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   }
 
   async function handleSaveProduct() {
+    if (!isPriceValid) return;
+
     const modules = buildModulePayload({
       selectedModules,
       libraryAllowDownloads,
@@ -534,6 +573,9 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
         subtitle: subtitle.trim() || undefined,
         description: description.trim() || undefined,
         type: productType,
+        isFree: isFreeProduct,
+        priceCents: isFreeProduct ? null : parsedPriceCents,
+        currency: normalizedCurrency,
         modules,
         galleryOnly: !selectedModules.LIBRARY,
         lockSequentialSteps: courseLockSequential,
@@ -546,9 +588,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
       subtitle: subtitle.trim() || undefined,
       description: description.trim() || undefined,
       type: productType,
-      isFree: true,
+      isFree: isFreeProduct,
+      priceCents: isFreeProduct ? null : parsedPriceCents,
       isVisible: true,
-      currency: "USD",
+      currency: normalizedCurrency,
       modules,
       galleryOnly: !selectedModules.LIBRARY,
       lockSequentialSteps: courseLockSequential,
@@ -587,6 +630,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
               className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
               disabled={
                 !title.trim() ||
+                !isPriceValid ||
                 createProductMutation.isPending ||
                 updateProductMutation.isPending
               }
@@ -627,6 +671,69 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Describe the promise of this product"
               />
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4 md:col-span-2">
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    ["FREE", "Free access", "Anyone with the page can open this product."],
+                    ["PAID", "Paid product", "This product shows a listed price instead of open access."],
+                  ] as Array<[PricingMode, string, string]>).map(([value, label, copy]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setPricingMode(value)}
+                      className={`flex-1 rounded-2xl border px-4 py-3 text-left transition ${
+                        pricingMode === value
+                          ? "border-emerald-400/50 bg-emerald-400/10 text-white"
+                          : "border-white/10 bg-black/30 text-zinc-300 hover:bg-white/5"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold">{label}</p>
+                      <p className="mt-1 text-xs text-zinc-400">{copy}</p>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-[160px_1fr]">
+                  <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
+                    Currency
+                    <input
+                      className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm tracking-[0.24em] text-white outline-none transition focus:border-sky-400/50"
+                      value={currency}
+                      onChange={(event) => setCurrency(event.target.value.slice(0, 8))}
+                      placeholder={DEFAULT_PRODUCT_CURRENCY}
+                      maxLength={8}
+                    />
+                  </label>
+                  <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
+                    Price
+                    <input
+                      className={`h-11 rounded-xl border bg-black/30 px-3 text-sm text-white outline-none transition ${
+                        isFreeProduct
+                          ? "border-white/10 opacity-50"
+                          : parsedPriceCents !== null && parsedPriceCents > 0
+                            ? "border-white/10 focus:border-sky-400/50"
+                            : "border-rose-400/40 focus:border-rose-400/60"
+                      }`}
+                      value={priceInput}
+                      onChange={(event) => setPriceInput(event.target.value)}
+                      placeholder="99.00"
+                      inputMode="decimal"
+                      disabled={isFreeProduct}
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+                  <p className="text-zinc-400">
+                    {isFreeProduct
+                      ? "Free products stay open to access."
+                      : "Paid products require a positive price."}
+                  </p>
+                  {!isFreeProduct && !isPriceValid ? (
+                    <p className="text-rose-300">Enter a valid price greater than zero.</p>
+                  ) : null}
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2 md:col-span-2">
                 {PRODUCT_TYPES.map(([value, label]) => (
                   <button

@@ -20,6 +20,26 @@ const MODULE_LABELS = {
   COURSE: "Course",
 } as const;
 
+function formatProductPrice(product: {
+  isFree: boolean;
+  priceCents: number | null;
+  currency: string | null;
+}) {
+  if (product.isFree) return "Free access";
+  if (product.priceCents == null) return "Paid";
+
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: product.currency ?? "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(product.priceCents / 100);
+  } catch {
+    return `${product.currency ?? "USD"} ${((product.priceCents ?? 0) / 100).toFixed(2)}`;
+  }
+}
+
 export function ProductListDashboard({ embedded = false }: { embedded?: boolean }) {
   const productsQuery = api.products.list.useQuery();
 
@@ -163,6 +183,18 @@ export function ProductListDashboard({ embedded = false }: { embedded?: boolean 
                   <p className="mt-4 line-clamp-2 text-sm text-zinc-400">
                     {product.description || "No product description yet."}
                   </p>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span
+                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                        product.isFree
+                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                          : "border-amber-400/20 bg-amber-400/10 text-amber-100"
+                      }`}
+                    >
+                      {formatProductPrice(product)}
+                    </span>
+                  </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
                     {enabledModules.length ? (
