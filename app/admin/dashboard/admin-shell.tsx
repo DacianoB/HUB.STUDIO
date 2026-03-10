@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Boxes, FileStack, LayoutDashboard, Users } from "lucide-react";
+import { Boxes, FileStack, LayoutDashboard, Palette, Users } from "lucide-react";
 
 type AdminShellProps = {
   title: string;
@@ -13,6 +13,7 @@ type AdminShellProps = {
 
 const NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Overview", icon: LayoutDashboard },
+  { href: "/admin/dashboard/branding", label: "Branding", icon: Palette },
   { href: "/admin/dashboard/users", label: "Users", icon: Users },
   { href: "/admin/dashboard/pages", label: "Pages", icon: FileStack },
   { href: "/admin/dashboard/products", label: "Products", icon: Boxes },

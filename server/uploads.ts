@@ -169,10 +169,14 @@ export function sanitizeFileStem(value: string) {
 export function resolveUploadType(input: { fileName: string; mimeType?: string | null }) {
   const normalizedMime = input.mimeType?.toLowerCase().trim() || "";
   const extension = path.extname(input.fileName).toLowerCase();
+  const normalizedMimeList = mimeRules.map((entry) => entry.mimeTypes as readonly string[]);
+  const normalizedExtensionList = mimeRules.map((entry) => entry.extensions as readonly string[]);
 
   const rule =
-    mimeRules.find((entry) => normalizedMime && entry.mimeTypes.includes(normalizedMime)) ??
-    mimeRules.find((entry) => entry.extensions.includes(extension));
+    mimeRules.find(
+      (entry, index) => normalizedMime && normalizedMimeList[index]?.includes(normalizedMime),
+    ) ??
+    mimeRules.find((entry, index) => normalizedExtensionList[index]?.includes(extension));
 
   if (!rule) {
     return null;
@@ -180,7 +184,7 @@ export function resolveUploadType(input: { fileName: string; mimeType?: string |
 
   const normalizedExtension =
     (normalizedMime && rule.preferredExtensionByMime[normalizedMime]) ||
-    (rule.extensions.includes(extension) ? extension : "") ||
+    ((rule.extensions as readonly string[]).includes(extension) ? extension : "") ||
     rule.preferredExtensionByMime[rule.mimeTypes[0]] ||
     ".bin";
 
@@ -202,6 +206,21 @@ export function buildUploadStorageSegments(input: {
   return [
     sanitizePathSegment(input.tenantSlug),
     sanitizePathSegment(input.productId),
+    input.assetType.toLowerCase(),
+    `${input.uniqueSuffix}-${sanitizeFileStem(input.fileStem)}${input.extension}`,
+  ];
+}
+
+export function buildTenantBrandingStorageSegments(input: {
+  tenantSlug: string;
+  assetType: UploadAssetType;
+  fileStem: string;
+  extension: string;
+  uniqueSuffix: string;
+}) {
+  return [
+    sanitizePathSegment(input.tenantSlug),
+    "tenant-branding",
     input.assetType.toLowerCase(),
     `${input.uniqueSuffix}-${sanitizeFileStem(input.fileStem)}${input.extension}`,
   ];

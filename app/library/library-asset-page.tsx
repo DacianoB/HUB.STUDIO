@@ -7,21 +7,20 @@ import { useSession } from 'next-auth/react';
 import {
   ArrowLeft,
   Bell,
-  ChevronDown,
   Compass,
   Download,
   Eye,
   FileText,
   Heart,
   Link2,
-  LogIn,
   MessageCircle,
   Search,
   Settings
 } from 'lucide-react';
 
+import { UserMenu } from '~/app/_components/user-menu';
 import type { PagesConfig } from '~/app/_nodes/schemas';
-import { readTenantTheme } from '~/app/_nodes/tenant-theme';
+import { readTenantBranding } from '~/app/_nodes/tenant-theme';
 import { Button } from '~/components/ui/button';
 import { api } from '~/trpc/react';
 
@@ -54,6 +53,16 @@ function normalizeSlug(slug: string) {
   return slug.replace(/^\/+|\/+$/g, '');
 }
 
+function initialsFromLabel(value: string) {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (!parts.length) return 'HB';
+  return parts.map((part) => part.charAt(0).toUpperCase()).join('');
+}
+
 export function LibraryAssetPage({
   assetId,
   backHref,
@@ -68,9 +77,11 @@ export function LibraryAssetPage({
   const userImage = session?.user?.image;
   const userInitial = userName.trim().charAt(0).toUpperCase() || 'U';
   const utils = api.useUtils();
-  const [visitorToken, setVisitorToken] = useState<string | undefined>(
-    undefined
-  );
+  const [visitorToken, setVisitorToken] = useState<string | undefined>(() => {
+    if (typeof window === 'undefined') return undefined;
+    const stored = window.localStorage.getItem(LIBRARY_VISITOR_TOKEN_KEY);
+    return stored || undefined;
+  });
   const assetQuery = api.products.libraryAssetById.useQuery({
     assetId,
     visitorToken
@@ -112,13 +123,6 @@ export function LibraryAssetPage({
   });
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const stored =
-      window.localStorage.getItem(LIBRARY_VISITOR_TOKEN_KEY) ?? undefined;
-    setVisitorToken(stored || undefined);
-  }, []);
-
-  useEffect(() => {
     if (!assetQuery.data) return;
     trackInteraction.mutate({
       productId: assetQuery.data.productId,
@@ -127,12 +131,16 @@ export function LibraryAssetPage({
       visitorToken,
       metadata: { source: 'library-item-page' }
     });
-  }, [assetQuery.data?.id, visitorToken]);
+  }, [assetQuery.data, trackInteraction, visitorToken]);
 
-  const tenantTheme = useMemo(
-    () => readTenantTheme(currentTenantQuery.data?.tenant?.settings),
+  const tenantBranding = useMemo(
+    () => readTenantBranding(currentTenantQuery.data?.tenant?.settings),
     [currentTenantQuery.data?.tenant?.settings]
   );
+  const tenantTheme = tenantBranding.theme;
+  const tenantLogoUrl = tenantBranding.logoUrl;
+  const tenantName = currentTenantQuery.data?.tenant?.name?.trim() || 'HUB';
+  const tenantInitials = initialsFromLabel(tenantName);
   const tenantCssVars = useMemo(
     () =>
       ({
@@ -145,9 +153,12 @@ export function LibraryAssetPage({
         '--tenant-button-primary': tenantTheme.buttonPrimary,
         '--tenant-button-primary-hover': tenantTheme.buttonPrimaryHover,
         '--tenant-button-text': tenantTheme.buttonText,
-        '--tenant-card-bg': tenantTheme.cardBg
+        '--tenant-card-bg': tenantTheme.cardBg,
+        '--tenant-node-radius': `${tenantBranding.nodeRadius}px`,
+        '--tenant-node-radius-sm': `${Math.max(10, tenantBranding.nodeRadius - 8)}px`,
+        '--tenant-node-radius-pill': `${Math.max(999, tenantBranding.nodeRadius * 2)}px`
       }) as CSSProperties,
-    [tenantTheme]
+    [tenantBranding.nodeRadius, tenantTheme]
   );
   const assetLocationPrefix = useMemo(() => {
     const normalizedBackHref = normalizeSlug(backHref);
@@ -196,6 +207,7 @@ export function LibraryAssetPage({
   return (
     <main
       className="relative flex h-screen overflow-hidden font-sans"
+      data-tenant-grid
       style={{
         ...tenantCssVars,
         backgroundColor: 'var(--tenant-bg-main)',
@@ -210,14 +222,24 @@ export function LibraryAssetPage({
         }}
       >
         <button
-          className="group relative flex aspect-square w-full items-center justify-center rounded-xl border text-xs font-bold text-black"
+          className="group relative flex aspect-square w-full items-center justify-center overflow-hidden border text-xs font-bold"
           style={{
+            borderRadius: 'var(--tenant-node-radius-sm)',
             borderColor: 'var(--tenant-accent)',
             backgroundColor: 'var(--tenant-accent)',
             color: 'var(--tenant-button-text)'
           }}
+          title={tenantName}
         >
-          HUB
+          {tenantLogoUrl ? (
+            <img
+              src={tenantLogoUrl}
+              alt={tenantName}
+              className="h-10 w-10 object-contain"
+            />
+          ) : (
+            <span>{tenantInitials}</span>
+          )}
         </button>
 
         {NAV_ITEMS.map((item) => {
@@ -225,10 +247,15 @@ export function LibraryAssetPage({
           return (
             <button
               key={item.label}
-              className="group relative flex aspect-square w-full items-center justify-center rounded-full p-3 transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)] max-md:p-2"
+              className="group relative flex aspect-square w-full items-center justify-center border p-3 transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)] max-md:p-2"
               title={item.label}
               type="button"
-              style={{ color: 'var(--tenant-text-secondary)' }}
+              style={{
+                borderRadius: 'var(--tenant-node-radius-pill)',
+                borderColor: 'var(--tenant-border)',
+                backgroundColor: 'var(--tenant-card-bg)',
+                color: 'var(--tenant-text-secondary)'
+              }}
             >
               <Icon className="h-5 w-5" />
             </button>
@@ -240,8 +267,13 @@ export function LibraryAssetPage({
         <div className="mt-auto flex flex-col items-center gap-1">
           <button
             type="button"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--tenant-text-secondary)] transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]"
+            className="flex h-10 w-10 items-center justify-center border text-[var(--tenant-text-secondary)] transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]"
             title="Configuracoes"
+            style={{
+              borderRadius: 'var(--tenant-node-radius-pill)',
+              borderColor: 'var(--tenant-border)',
+              backgroundColor: 'var(--tenant-card-bg)'
+            }}
           >
             <Settings className="h-5 w-5" />
           </button>
@@ -257,53 +289,37 @@ export function LibraryAssetPage({
           }}
         >
           <div className="group relative min-w-0 flex-1">
-            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 transition-colors group-focus-within:text-white" />
+            <Search
+              className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors"
+              style={{ color: 'var(--tenant-text-secondary)' }}
+            />
             <input
               type="text"
               readOnly
               value={`${assetLocationPrefix}${asset.id}`}
-              className="w-full rounded-full border border-transparent bg-white/[0.08] py-2.5 pl-10 pr-4 text-sm text-white placeholder-gray-500 outline-none"
+              className="w-full border py-2.5 pl-10 pr-4 text-sm outline-none"
+              style={{
+                borderRadius: 'var(--tenant-node-radius-pill)',
+                borderColor: 'var(--tenant-border)',
+                backgroundColor: 'var(--tenant-card-bg)',
+                color: 'var(--tenant-text-main)'
+              }}
             />
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {isLoggedIn ? (
-              <>
-                <span className="hidden max-w-40 truncate text-sm text-gray-300 md:block">
-                  {userName}
-                </span>
-                {userImage ? (
-                  <img
-                    src={userImage}
-                    alt={userName}
-                    className="h-8 w-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-600 text-xs font-bold text-black">
-                    {userInitial}
-                  </span>
-                )}
-                <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(
-                    `/auth/signin?callbackUrl=${encodeURIComponent(pathname || '/')}`
-                  )
-                }
-                className="flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/10"
-                style={{
-                  borderColor: 'var(--tenant-border)',
-                  backgroundColor: 'var(--tenant-button-primary)',
-                  color: 'var(--tenant-button-text)'
-                }}
-              >
-                <LogIn className="h-3.5 w-3.5" />
-                Entrar
-              </button>
-            )}
+            <UserMenu
+              isLoggedIn={isLoggedIn}
+              pathname={pathname}
+              userName={userName}
+              userImage={userImage}
+              userInitial={userInitial}
+              tenantTheme={tenantTheme}
+              tenantName={currentTenantQuery.data?.tenant?.name}
+              tenantSlug={currentTenantQuery.data?.tenant?.slug}
+              tenantRole={currentTenantQuery.data?.role ?? session?.user?.tenantRole}
+              isGlobalAdmin={session?.user?.isGlobalAdmin}
+            />
           </div>
         </div>
 
@@ -311,39 +327,67 @@ export function LibraryAssetPage({
           <button
             type="button"
             onClick={() => router.push(backHref as any)}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-[var(--tenant-text-secondary)] transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]"
-            style={{ backgroundColor: 'var(--tenant-card-bg)' }}
+            className="inline-flex shrink-0 items-center gap-2 px-4 py-2 text-xs font-semibold text-[var(--tenant-text-secondary)] transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]"
+            style={{
+              borderRadius: 'var(--tenant-node-radius-pill)',
+              backgroundColor: 'var(--tenant-card-bg)'
+            }}
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             {pageName}
           </button>
 
-          <div className="shrink-0 rounded-full bg-[var(--tenant-button-primary)] px-4 py-2 text-xs font-semibold text-[var(--tenant-button-text)]">
+          <div
+            className="shrink-0 bg-[var(--tenant-button-primary)] px-4 py-2 text-xs font-semibold text-[var(--tenant-button-text)]"
+            style={{ borderRadius: 'var(--tenant-node-radius-pill)' }}
+          >
             {asset.title}
           </div>
         </div>
 
         <section className="px-4 pb-6">
+          <style>{`
+            [data-tenant-grid] input::placeholder {
+              color: var(--tenant-text-secondary);
+            }
+          `}</style>
           <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
-              <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-5 py-4">
+            <div
+              className="overflow-hidden border shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+              style={{
+                borderRadius: 'var(--tenant-node-radius)',
+                borderColor: 'var(--tenant-border)',
+                backgroundColor: 'var(--tenant-card-bg)'
+              }}
+            >
+              <div
+                className="flex items-center justify-between px-5 py-4"
+                style={{
+                  borderBottom: '1px solid var(--tenant-border)',
+                  backgroundColor: 'rgba(255,255,255,0.03)'
+                }}
+              >
                 <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  <p
+                    className="text-xs uppercase tracking-[0.22em]"
+                    style={{ color: 'var(--tenant-text-secondary)' }}
+                  >
                     {pageName}
                   </p>
-                  <h1 className="mt-2 text-2xl font-semibold text-white md:text-3xl">
+                  <h1 className="mt-2 text-2xl font-semibold md:text-3xl">
                     {asset.title}
                   </h1>
                 </div>
               </div>
 
-              <div className="bg-black">
+              <div style={{ backgroundColor: 'var(--tenant-bg-main)' }}>
                 {asset.type === 'VIDEO' ? (
                   <video
                     src={asset.url}
                     controls
                     poster={previewUrl ?? undefined}
-                    className="aspect-video w-full bg-black object-contain"
+                    className="aspect-video w-full object-contain"
+                    style={{ backgroundColor: 'var(--tenant-bg-main)' }}
                   />
                 ) : asset.type === 'IMAGE' ? (
                   <img
@@ -364,7 +408,15 @@ export function LibraryAssetPage({
                       backgroundImage: `linear-gradient(180deg, rgba(9,9,11,0.18), rgba(9,9,11,0.82)), url(${previewUrl})`
                     }}
                   >
-                    <div className="rounded-full border border-white/10 bg-black/35 p-4 text-white/90 backdrop-blur">
+                    <div
+                      className="border p-4 backdrop-blur"
+                      style={{
+                        borderRadius: 'var(--tenant-node-radius-pill)',
+                        borderColor: 'var(--tenant-border)',
+                        backgroundColor: 'rgba(0,0,0,0.35)',
+                        color: 'var(--tenant-text-main)'
+                      }}
+                    >
                       {asset.type === 'LINK' ? (
                         <Link2 className="h-8 w-8" />
                       ) : (
@@ -373,8 +425,21 @@ export function LibraryAssetPage({
                     </div>
                   </div>
                 ) : (
-                  <div className="flex h-[70vh] items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(139,92,246,0.18),_transparent_40%),linear-gradient(180deg,_rgba(24,24,27,0.5),_rgba(9,9,11,0.96))]">
-                    <div className="rounded-full border border-white/10 bg-black/35 p-4 text-white/90 backdrop-blur">
+                  <div
+                    className="flex h-[70vh] items-center justify-center"
+                    style={{
+                      background: `radial-gradient(circle at top, ${tenantTheme.accent}2e, transparent 40%), linear-gradient(180deg, rgba(24,24,27,0.5), rgba(9,9,11,0.96))`
+                    }}
+                  >
+                    <div
+                      className="border p-4 backdrop-blur"
+                      style={{
+                        borderRadius: 'var(--tenant-node-radius-pill)',
+                        borderColor: 'var(--tenant-border)',
+                        backgroundColor: 'rgba(0,0,0,0.35)',
+                        color: 'var(--tenant-text-main)'
+                      }}
+                    >
                       {asset.type === 'LINK' ? (
                         <Link2 className="h-8 w-8" />
                       ) : (
@@ -388,17 +453,24 @@ export function LibraryAssetPage({
 
             <aside className="space-y-4">
               <div
-                className="rounded-[28px] border p-5"
+                className="border p-5"
                 style={{
+                  borderRadius: 'var(--tenant-node-radius)',
                   borderColor: 'var(--tenant-border)',
                   backgroundColor: 'var(--tenant-card-bg)'
                 }}
               >
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                <p
+                  className="text-xs uppercase tracking-[0.22em]"
+                  style={{ color: 'var(--tenant-text-secondary)' }}
+                >
                   Info
                 </p>
                 <div className="mt-4 grid gap-2">
-                  <div className="mb-4 text-sm text-zinc-300">
+                  <div
+                    className="mb-4 text-sm"
+                    style={{ color: 'var(--tenant-text-secondary)' }}
+                  >
                     {asset.description?.trim() || ''}
                   </div>
                   {canOpenLink && resolvedTargetUrl ? (
@@ -406,7 +478,13 @@ export function LibraryAssetPage({
                       href={resolvedTargetUrl}
                       target={opensInNewTab ? '_blank' : '_self'}
                       rel={opensInNewTab ? 'noreferrer noopener' : undefined}
-                      className="inline-flex h-11 items-center justify-center rounded-xl border border-sky-400/30 bg-sky-400 px-4 text-sm font-semibold text-black transition hover:bg-sky-300"
+                      className="inline-flex h-11 items-center justify-center border px-4 text-sm font-semibold transition"
+                      style={{
+                        borderRadius: 'var(--tenant-node-radius-sm)',
+                        borderColor: 'var(--tenant-border)',
+                        backgroundColor: 'var(--tenant-button-primary)',
+                        color: 'var(--tenant-button-text)'
+                      }}
                       onClick={() =>
                         trackInteraction.mutate({
                           productId: asset.productId,
@@ -426,11 +504,17 @@ export function LibraryAssetPage({
                   ) : null}
                   {showLikes ? (
                     <Button
-                      className={`h-11 rounded-xl px-4 text-sm font-semibold transition ${
-                        asset.currentUserLiked
-                          ? 'border-rose-500/30 bg-rose-500 text-black hover:bg-rose-400'
-                          : 'border-white/10 bg-white/10 text-white hover:bg-white/15'
-                      }`}
+                      className="h-11 px-4 text-sm font-semibold transition"
+                      style={{
+                        borderRadius: 'var(--tenant-node-radius-sm)',
+                        borderColor: 'var(--tenant-border)',
+                        backgroundColor: asset.currentUserLiked
+                          ? 'var(--tenant-button-primary)'
+                          : 'rgba(255,255,255,0.08)',
+                        color: asset.currentUserLiked
+                          ? 'var(--tenant-button-text)'
+                          : 'var(--tenant-text-main)'
+                      }}
                       onClick={() =>
                         toggleLike.mutate({
                           assetId: asset.id,
@@ -447,7 +531,13 @@ export function LibraryAssetPage({
                     <a
                       href={asset.url}
                       download
-                      className="inline-flex h-11 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black transition hover:bg-emerald-400"
+                      className="inline-flex h-11 items-center justify-center border px-4 text-sm font-semibold transition"
+                      style={{
+                        borderRadius: 'var(--tenant-node-radius-sm)',
+                        borderColor: 'var(--tenant-border)',
+                        backgroundColor: 'var(--tenant-button-primary)',
+                        color: 'var(--tenant-button-text)'
+                      }}
                       onClick={() =>
                         markDownloaded.mutate({
                           productId: asset.productId,
@@ -463,32 +553,63 @@ export function LibraryAssetPage({
                 </div>
               </div>
               <div
-                className="mt-3 rounded-2xl border  p-3 flex gap-2 *:grow *:w-full"
+                className="mt-3 flex gap-2 border p-3 *:grow *:w-full"
                 style={{
+                  borderRadius: 'var(--tenant-node-radius)',
                   borderColor: 'var(--tenant-border)',
                   backgroundColor: 'var(--tenant-card-bg)'
                 }}
               >
                 {showLikes ? (
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-zinc-300">
+                  <div
+                    className="flex items-center justify-between border px-3 py-3 text-sm"
+                    style={{
+                      borderRadius: 'var(--tenant-node-radius-sm)',
+                      borderColor: 'var(--tenant-border)',
+                      backgroundColor: 'rgba(0,0,0,0.2)',
+                      color: 'var(--tenant-text-secondary)'
+                    }}
+                  >
                     <span className="inline-flex items-center gap-2">
-                      <Heart className="h-4 w-4 text-rose-300" />
+                      <Heart
+                        className="h-4 w-4"
+                        style={{ color: 'var(--tenant-button-primary)' }}
+                      />
                     </span>
                     <span>{asset.stats.likes}</span>
                   </div>
                 ) : null}
                 {showViews ? (
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-zinc-300">
+                  <div
+                    className="flex items-center justify-between border px-3 py-3 text-sm"
+                    style={{
+                      borderRadius: 'var(--tenant-node-radius-sm)',
+                      borderColor: 'var(--tenant-border)',
+                      backgroundColor: 'rgba(0,0,0,0.2)',
+                      color: 'var(--tenant-text-secondary)'
+                    }}
+                  >
                     <span className="inline-flex items-center gap-2">
-                      <Eye className="h-4 w-4 text-sky-300" />
+                      <Eye className="h-4 w-4" style={{ color: 'var(--tenant-accent)' }} />
                     </span>
                     <span>{asset.stats.views}</span>
                   </div>
                 ) : null}
                 {showDownloads ? (
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-zinc-300">
+                  <div
+                    className="flex items-center justify-between border px-3 py-3 text-sm"
+                    style={{
+                      borderRadius: 'var(--tenant-node-radius-sm)',
+                      borderColor: 'var(--tenant-border)',
+                      backgroundColor: 'rgba(0,0,0,0.2)',
+                      color: 'var(--tenant-text-secondary)'
+                    }}
+                  >
                     <span className="inline-flex items-center gap-2">
-                      <Download className="h-4 w-4 text-emerald-300" />
+                      <Download
+                        className="h-4 w-4"
+                        style={{ color: 'var(--tenant-button-primary)' }}
+                      />
                     </span>
                     <span>{asset.stats.downloads}</span>
                   </div>

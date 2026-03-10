@@ -2,18 +2,42 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import {
+  MAX_TENANT_NODE_RADIUS,
+  MIN_TENANT_NODE_RADIUS,
+} from "~/app/_nodes/tenant-theme";
+import {
   createTRPCRouter,
   globalAdminProcedure,
   protectedProcedure,
   tenantAdminProcedure,
   tenantProcedure,
 } from "~/server/api/trpc";
+import { isSupportedAssetUrl } from "~/server/uploads";
 
 const slugSchema = z
   .string()
   .min(2)
   .max(50)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+
+const tenantThemeSchema = z.object({
+  bgMain: z.string().min(4).max(32),
+  bgSecondary: z.string().min(4).max(32),
+  textMain: z.string().min(4).max(32),
+  textSecondary: z.string().min(4).max(32),
+  borderColor: z.string().min(4).max(32),
+  accent: z.string().min(4).max(32),
+  buttonPrimary: z.string().min(4).max(32),
+  buttonPrimaryHover: z.string().min(4).max(32),
+  buttonText: z.string().min(4).max(32),
+  cardBg: z.string().min(4).max(32),
+});
+
+function readTenantSettings(settings: unknown) {
+  return settings && typeof settings === "object"
+    ? (settings as Record<string, unknown>)
+    : {};
+}
 
 export const tenantsRouter = createTRPCRouter({
   listMine: protectedProcedure.query(async ({ ctx }) => {
@@ -173,30 +197,14 @@ export const tenantsRouter = createTRPCRouter({
   }),
 
   updateTheme: tenantAdminProcedure
-    .input(
-      z.object({
-        bgMain: z.string().min(4).max(32),
-        bgSecondary: z.string().min(4).max(32),
-        textMain: z.string().min(4).max(32),
-        textSecondary: z.string().min(4).max(32),
-        borderColor: z.string().min(4).max(32),
-        accent: z.string().min(4).max(32),
-        buttonPrimary: z.string().min(4).max(32),
-        buttonPrimaryHover: z.string().min(4).max(32),
-        buttonText: z.string().min(4).max(32),
-        cardBg: z.string().min(4).max(32),
-      }),
-    )
+    .input(tenantThemeSchema)
     .mutation(async ({ ctx, input }) => {
       const tenant = await ctx.db.tenant.findUnique({
         where: { id: ctx.tenantId },
       });
       if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
 
-      const settings =
-        tenant.settings && typeof tenant.settings === "object"
-          ? (tenant.settings as Record<string, unknown>)
-          : {};
+      const settings = readTenantSettings(tenant.settings);
 
       return ctx.db.tenant.update({
         where: { id: ctx.tenantId },
@@ -206,6 +214,47 @@ export const tenantsRouter = createTRPCRouter({
             theme: {
               ...input,
             },
+          },
+        },
+      });
+    }),
+
+  updateBranding: tenantAdminProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(2).max(120),
+        logoUrl: z.string().trim().max(2048).nullable(),
+        nodeRadius: z.number().int().min(MIN_TENANT_NODE_RADIUS).max(MAX_TENANT_NODE_RADIUS),
+        theme: tenantThemeSchema,
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const tenant = await ctx.db.tenant.findUnique({
+        where: { id: ctx.tenantId },
+      });
+      if (!tenant) throw new TRPCError({ code: "NOT_FOUND", message: "Tenant not found." });
+
+      const settings = readTenantSettings(tenant.settings);
+      const logoUrl = input.logoUrl?.trim() || null;
+
+      if (logoUrl && !isSupportedAssetUrl(logoUrl)) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid logo URL.",
+        });
+      }
+
+      return ctx.db.tenant.update({
+        where: { id: ctx.tenantId },
+        data: {
+          name: input.name,
+          settings: {
+            ...settings,
+            theme: {
+              ...input.theme,
+            },
+            logoUrl,
+            nodeRadius: input.nodeRadius,
           },
         },
       });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Boxes, FileStack, Plus, Users } from "lucide-react";
+import { ArrowRight, Boxes, FileStack, Palette, Plus, Users } from "lucide-react";
 
 import { AdminShell } from "~/app/admin/dashboard/admin-shell";
 import { Button } from "~/components/ui/button";
@@ -20,7 +20,7 @@ export function OverviewDashboard() {
   return (
     <AdminShell
       title="Admin dashboard"
-      description="Manage the full tenant control center from one place: users, pages, and products."
+      description="Manage the full tenant control center from one place: branding, users, pages, and products."
       actions={
         <Link href="/admin/dashboard/products/new">
           <Button className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400">
@@ -62,8 +62,16 @@ export function OverviewDashboard() {
           ))}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-3">
+        <section className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
           {[
+            {
+              href: "/admin/dashboard/branding",
+              title: "Branding",
+              description:
+                "Edit company name, palette, logo, and default node rounding for the tenant experience.",
+              icon: Palette,
+              meta: "Theme and company settings",
+            },
             {
               href: "/admin/dashboard/users",
               title: "Users",
@@ -93,7 +101,7 @@ export function OverviewDashboard() {
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={item.href as any}
                 className="group rounded-3xl border border-white/10 bg-black/25 p-5 transition hover:border-sky-400/40 hover:bg-black/35"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5">

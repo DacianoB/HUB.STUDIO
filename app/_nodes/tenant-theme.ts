@@ -11,6 +11,12 @@ export type TenantTheme = {
   cardBg: string;
 };
 
+export type TenantBranding = {
+  theme: TenantTheme;
+  logoUrl: string | null;
+  nodeRadius: number;
+};
+
 export const DEFAULT_TENANT_THEME: TenantTheme = {
   bgMain: '#000000',
   bgSecondary: '#111111',
@@ -24,20 +30,25 @@ export const DEFAULT_TENANT_THEME: TenantTheme = {
   cardBg: '#18181b'
 };
 
+export const DEFAULT_TENANT_NODE_RADIUS = 24;
+export const MIN_TENANT_NODE_RADIUS = 8;
+export const MAX_TENANT_NODE_RADIUS = 36;
+
 export const TENANT_THEME_FIELDS: Array<{
   key: keyof TenantTheme;
   label: string;
+  hint: string;
 }> = [
-  { key: 'bgMain', label: 'bg main' },
-  { key: 'bgSecondary', label: 'bg secondary' },
-  { key: 'textMain', label: 'text main' },
-  { key: 'textSecondary', label: 'text secondary' },
-  { key: 'borderColor', label: 'border' },
-  { key: 'accent', label: 'accent' },
-  { key: 'buttonPrimary', label: 'button primary' },
-  { key: 'buttonPrimaryHover', label: 'button hover' },
-  { key: 'buttonText', label: 'button text' },
-  { key: 'cardBg', label: 'card bg' }
+  { key: 'bgMain', label: 'Main background', hint: 'Page canvas and main content areas.' },
+  { key: 'bgSecondary', label: 'Sidebar and header', hint: 'Navigation rail and sticky top bar.' },
+  { key: 'textMain', label: 'Primary text', hint: 'Headlines and main body text.' },
+  { key: 'textSecondary', label: 'Muted text and icons', hint: 'Secondary labels, icons, and helper copy.' },
+  { key: 'borderColor', label: 'Borders', hint: 'Outlines, dividers, and input strokes.' },
+  { key: 'accent', label: 'Brand accent', hint: 'Logo badge and highlighted brand moments.' },
+  { key: 'buttonPrimary', label: 'Primary button', hint: 'Active chips, CTAs, and action buttons.' },
+  { key: 'buttonPrimaryHover', label: 'Button hover', hint: 'Hover state for interactive buttons and pills.' },
+  { key: 'buttonText', label: 'Button text', hint: 'Text and icons that sit on accent surfaces.' },
+  { key: 'cardBg', label: 'Cards and chips', hint: 'Secondary surfaces behind filters and cards.' }
 ];
 
 function resolveThemeColor(
@@ -51,11 +62,33 @@ function resolveThemeColor(
   return DEFAULT_TENANT_THEME[key];
 }
 
+function readSettingsRecord(settings: unknown) {
+  return settings && typeof settings === 'object'
+    ? (settings as Record<string, unknown>)
+    : undefined;
+}
+
+function resolveNodeRadius(settingsRecord: Record<string, unknown> | undefined) {
+  const value = Number(settingsRecord?.nodeRadius ?? DEFAULT_TENANT_NODE_RADIUS);
+  if (!Number.isFinite(value)) return DEFAULT_TENANT_NODE_RADIUS;
+  return Math.max(
+    MIN_TENANT_NODE_RADIUS,
+    Math.min(MAX_TENANT_NODE_RADIUS, Math.round(value))
+  );
+}
+
+export function readTenantLogoUrl(settings: unknown) {
+  const settingsRecord = readSettingsRecord(settings);
+  const value = settingsRecord?.logoUrl;
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+export function readTenantNodeRadius(settings: unknown) {
+  return resolveNodeRadius(readSettingsRecord(settings));
+}
+
 export function readTenantTheme(settings: unknown): TenantTheme {
-  const settingsRecord =
-    settings && typeof settings === 'object'
-      ? (settings as Record<string, unknown>)
-      : undefined;
+  const settingsRecord = readSettingsRecord(settings);
   const theme =
     settingsRecord?.theme && typeof settingsRecord.theme === 'object'
       ? (settingsRecord.theme as Record<string, unknown>)
@@ -72,5 +105,13 @@ export function readTenantTheme(settings: unknown): TenantTheme {
     buttonPrimaryHover: resolveThemeColor(theme, 'buttonPrimaryHover'),
     buttonText: resolveThemeColor(theme, 'buttonText'),
     cardBg: resolveThemeColor(theme, 'cardBg')
+  };
+}
+
+export function readTenantBranding(settings: unknown): TenantBranding {
+  return {
+    theme: readTenantTheme(settings),
+    logoUrl: readTenantLogoUrl(settings),
+    nodeRadius: readTenantNodeRadius(settings)
   };
 }

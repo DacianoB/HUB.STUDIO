@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Braces,
   LayoutGrid,
+  Lock,
   Package2,
   Plus,
   Search,
@@ -1071,6 +1072,7 @@ export function PagesDashboard() {
       >
         {levelPages.map((page) => {
           const isActive = page.id === activePageId;
+          const isUserLocked = !readEditableByUser(page);
           return (
             <button
               key={page.id}
@@ -1082,9 +1084,23 @@ export function PagesDashboard() {
                   : "border-white/80 bg-transparent text-white hover:bg-white/5"
               }`}
             >
-              <p className="truncate font-mono text-[12px] font-semibold uppercase tracking-[0.14em]">
-                {page.name}
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate font-mono text-[12px] font-semibold uppercase tracking-[0.14em]">
+                  {page.name}
+                </p>
+                {isUserLocked ? (
+                  <span
+                    className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                      isActive
+                        ? "bg-black/10 text-black/75"
+                        : "border border-white/10 bg-white/5 text-zinc-300"
+                    }`}
+                  >
+                    <Lock className="h-3 w-3" />
+                    Locked
+                  </span>
+                ) : null}
+              </div>
               <p
                 className={`mt-2 truncate text-[11px] ${
                   isActive ? "text-black/70" : "text-zinc-400"
@@ -1256,9 +1272,17 @@ export function PagesDashboard() {
                     <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
                       Page editor
                     </p>
-                    <h2 className="mt-1 text-xl font-semibold text-white">
-                      {selectedPage.name}
-                    </h2>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <h2 className="text-xl font-semibold text-white">
+                        {selectedPage.name}
+                      </h2>
+                      {!readEditableByUser(selectedPage) ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300">
+                          <Lock className="h-3 w-3" />
+                          Locked for users
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <Link

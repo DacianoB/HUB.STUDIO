@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
   Bell,
-  ChevronDown,
   Compass,
   LayoutGrid,
-  LogIn,
+  Lock,
   MessageCircle,
   RotateCcw,
   Search,
@@ -14,14 +13,14 @@ import {
 } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Responsive } from 'react-grid-layout';
-import { WidthProvider } from 'react-grid-layout/legacy';
+import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
 
 import { ComponentRegistry } from '~/app/_nodes/component-registry';
+import { UserMenu } from '~/app/_components/user-menu';
 import componentsCatalog from '~/app/_nodes/components.json';
 import { pagesConfig } from '~/app/_nodes/pages';
 import type { PagesConfig, Preset } from '~/app/_nodes/schemas';
-import { readTenantTheme } from '~/app/_nodes/tenant-theme';
+import { readTenantBranding } from '~/app/_nodes/tenant-theme';
 import { api } from '~/trpc/react';
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
@@ -406,6 +405,16 @@ function pathFromSlug(slug: string) {
   return normalized ? `/${normalized}` : '/';
 }
 
+function initialsFromLabel(value: string) {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  if (!parts.length) return 'HB';
+  return parts.map((part) => part.charAt(0).toUpperCase()).join('');
+}
+
 function findPresetBySlug(
   slug: string | undefined,
   config: PagesConfig
@@ -638,6 +647,7 @@ function DynamicGridCanvas({
     if (!canUserEditLayout) setIsEditing(false);
   }, [canUserEditLayout]);
   const isAdminPreview = Boolean(adminPreview);
+  const isLockedForUser = !isAdminPreview && !canUserEditLayout;
   const isLayoutEditing = isAdminPreview ? true : isEditing;
   useEffect(() => {
     if (adminPreview?.forcedBreakpoint) {
@@ -833,10 +843,14 @@ function DynamicGridCanvas({
     currentBreakpoint
   ]);
 
-  const tenantTheme = useMemo(
-    () => readTenantTheme(currentTenantQuery.data?.tenant?.settings),
+  const tenantBranding = useMemo(
+    () => readTenantBranding(currentTenantQuery.data?.tenant?.settings),
     [currentTenantQuery.data?.tenant?.settings]
   );
+  const tenantTheme = tenantBranding.theme;
+  const tenantLogoUrl = tenantBranding.logoUrl;
+  const tenantName = currentTenantQuery.data?.tenant?.name?.trim() || 'HUB';
+  const tenantInitials = initialsFromLabel(tenantName);
   const tenantCssVars = useMemo(
     () =>
       ({
@@ -849,9 +863,12 @@ function DynamicGridCanvas({
         '--tenant-button-primary': tenantTheme.buttonPrimary,
         '--tenant-button-primary-hover': tenantTheme.buttonPrimaryHover,
         '--tenant-button-text': tenantTheme.buttonText,
-        '--tenant-card-bg': tenantTheme.cardBg
+        '--tenant-card-bg': tenantTheme.cardBg,
+        '--tenant-node-radius': `${tenantBranding.nodeRadius}px`,
+        '--tenant-node-radius-sm': `${Math.max(10, tenantBranding.nodeRadius - 8)}px`,
+        '--tenant-node-radius-pill': `${Math.max(999, tenantBranding.nodeRadius * 2)}px`
       }) as CSSProperties,
-    [tenantTheme]
+    [tenantBranding.nodeRadius, tenantTheme]
   );
 
   if (preset.requiresAuth && authStatus !== 'authenticated') {
@@ -869,6 +886,7 @@ function DynamicGridCanvas({
       className={`relative flex overflow-hidden font-sans ${
         isAdminPreview ? 'h-[820px]' : 'h-screen'
       }`}
+      data-tenant-grid
       style={{
         ...tenantCssVars,
         backgroundColor: 'var(--tenant-bg-main)',
@@ -883,14 +901,24 @@ function DynamicGridCanvas({
         }}
       >
         <button
-          className="group relative flex aspect-square w-full items-center justify-center rounded-xl border text-xs font-bold text-black"
+          className="group relative flex aspect-square w-full items-center justify-center overflow-hidden border text-xs font-bold"
           style={{
+            borderRadius: 'var(--tenant-node-radius-sm)',
             borderColor: 'var(--tenant-accent)',
             backgroundColor: 'var(--tenant-accent)',
             color: 'var(--tenant-button-text)'
           }}
+          title={tenantName}
         >
-          HUB
+          {tenantLogoUrl ? (
+            <img
+              src={tenantLogoUrl}
+              alt={tenantName}
+              className="h-10 w-10 object-contain"
+            />
+          ) : (
+            <span>{tenantInitials}</span>
+          )}
         </button>
 
         {NAV_ITEMS.map((item) => {
@@ -898,10 +926,15 @@ function DynamicGridCanvas({
           return (
             <button
               key={item.label}
-              className="group relative flex aspect-square w-full items-center justify-center rounded-full p-3 transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)] max-md:p-2"
+              className="group relative flex aspect-square w-full items-center justify-center border p-3 transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)] max-md:p-2"
               title={item.label}
               type="button"
-              style={{ color: 'var(--tenant-text-secondary)' }}
+              style={{
+                borderRadius: 'var(--tenant-node-radius-pill)',
+                borderColor: 'var(--tenant-border)',
+                backgroundColor: 'var(--tenant-card-bg)',
+                color: 'var(--tenant-text-secondary)'
+              }}
             >
               <Icon className="h-5 w-5" />
             </button>
@@ -917,14 +950,30 @@ function DynamicGridCanvas({
             setIsEditing((prev) => !prev);
           }}
           disabled={isAdminPreview || !canUserEditLayout}
-          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+          className={`flex h-10 w-10 items-center justify-center border transition-colors ${
             isLayoutEditing
               ? 'bg-[var(--tenant-button-primary)] text-[var(--tenant-button-text)]'
               : canUserEditLayout
                 ? 'text-[var(--tenant-text-secondary)] hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]'
-                : 'cursor-not-allowed text-gray-700'
+                : 'cursor-not-allowed'
           }`}
-          title="Editar layout"
+          style={
+            canUserEditLayout
+              ? {
+                  borderRadius: 'var(--tenant-node-radius-pill)',
+                  borderColor: 'var(--tenant-border)',
+                  backgroundColor: isLayoutEditing
+                    ? 'var(--tenant-button-primary)'
+                    : 'var(--tenant-card-bg)'
+                }
+              : {
+                  borderRadius: 'var(--tenant-node-radius-pill)',
+                  borderColor: 'var(--tenant-border)',
+                  backgroundColor: 'var(--tenant-card-bg)',
+                  color: 'var(--tenant-border)'
+                }
+          }
+          title={isLockedForUser ? 'Pagina bloqueada para edicao de layout' : 'Editar layout'}
         >
           <LayoutGrid className="h-5 w-5" />
         </button>
@@ -937,21 +986,58 @@ function DynamicGridCanvas({
             setLayouts(buildLayouts(initialItems));
           }}
           disabled={isAdminPreview || !canUserEditLayout}
-          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+          className={`flex h-10 w-10 items-center justify-center border transition-colors ${
             canUserEditLayout
               ? 'text-[var(--tenant-text-secondary)] hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]'
-              : 'cursor-not-allowed text-gray-700'
+              : 'cursor-not-allowed'
           }`}
-          title="Resetar layout"
+          style={
+            canUserEditLayout
+              ? {
+                  borderRadius: 'var(--tenant-node-radius-pill)',
+                  borderColor: 'var(--tenant-border)',
+                  backgroundColor: 'var(--tenant-card-bg)'
+                }
+              : {
+                  borderRadius: 'var(--tenant-node-radius-pill)',
+                  borderColor: 'var(--tenant-border)',
+                  backgroundColor: 'var(--tenant-card-bg)',
+                  color: 'var(--tenant-border)'
+                }
+          }
+          title={isLockedForUser ? 'Pagina bloqueada para edicao de layout' : 'Resetar layout'}
         >
           <RotateCcw className="h-5 w-5" />
         </button>
 
+        {isLockedForUser ? (
+          <div
+            className="mt-1 flex w-full flex-col items-center gap-1 border px-2 py-2 text-center"
+            style={{
+              borderRadius: 'var(--tenant-node-radius)',
+              borderColor: 'var(--tenant-border)',
+              backgroundColor: 'rgba(255,255,255,0.04)',
+              color: 'var(--tenant-text-secondary)'
+            }}
+            title="Esta pagina nao pode ser editada pelos usuarios"
+          >
+            <Lock className="h-4 w-4" />
+            <span className="text-[10px] font-semibold uppercase tracking-[0.16em]">
+              Locked
+            </span>
+          </div>
+        ) : null}
+
         <div className="mt-auto flex flex-col items-center gap-1">
           <button
             type="button"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-[var(--tenant-text-secondary)] transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]"
+            className="flex h-10 w-10 items-center justify-center border text-[var(--tenant-text-secondary)] transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]"
             title="Configuracoes"
+            style={{
+              borderRadius: 'var(--tenant-node-radius-pill)',
+              borderColor: 'var(--tenant-border)',
+              backgroundColor: 'var(--tenant-card-bg)'
+            }}
           >
             <Settings className="h-5 w-5" />
           </button>
@@ -967,9 +1053,15 @@ function DynamicGridCanvas({
           }}
         >
           <div className="group relative min-w-0 flex-1">
-            <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500 transition-colors group-focus-within:text-white" />
+            <Search
+              className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors"
+              style={{ color: 'var(--tenant-text-secondary)' }}
+            />
             {lockedSearchPrefix ? (
-              <span className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 text-sm font-medium text-gray-400">
+              <span
+                className="pointer-events-none absolute left-9 top-1/2 -translate-y-1/2 text-sm font-medium"
+                style={{ color: 'var(--tenant-text-secondary)' }}
+              >
                 {lockedSearchPrefix}
               </span>
             ) : null}
@@ -979,50 +1071,31 @@ function DynamicGridCanvas({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               disabled={isAdminPreview}
-              className={`w-full rounded-full border border-transparent bg-white/[0.08] py-2.5 pr-4 text-sm text-white placeholder-gray-500 outline-none transition-all focus:border-white/20 focus:bg-white/[0.14] focus:ring-1 focus:ring-white/25 ${
+              className={`w-full border py-2.5 pr-4 text-sm outline-none transition-all ${
                 lockedSearchPrefix ? 'pl-32' : 'pl-10'
               }`}
+              style={{
+                borderRadius: 'var(--tenant-node-radius-pill)',
+                borderColor: 'var(--tenant-border)',
+                backgroundColor: 'var(--tenant-card-bg)',
+                color: 'var(--tenant-text-main)'
+              }}
             />
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {isLoggedIn ? (
-              <>
-                <span className="hidden max-w-40 truncate text-sm text-gray-300 md:block">
-                  {userName}
-                </span>
-                {userImage ? (
-                  <img
-                    src={userImage}
-                    alt={userName}
-                    className="h-8 w-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-600 text-xs font-bold text-black">
-                    {userInitial}
-                  </span>
-                )}
-                <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(
-                    `/auth/signin?callbackUrl=${encodeURIComponent(pathname || '/')}`
-                  )
-                }
-                className="flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/10"
-                style={{
-                  borderColor: 'var(--tenant-border)',
-                  backgroundColor: 'var(--tenant-button-primary)',
-                  color: 'var(--tenant-button-text)'
-                }}
-              >
-                <LogIn className="h-3.5 w-3.5" />
-                Entrar
-              </button>
-            )}
+            <UserMenu
+              isLoggedIn={isLoggedIn}
+              pathname={pathname}
+              userName={userName}
+              userImage={userImage}
+              userInitial={userInitial}
+              tenantTheme={tenantTheme}
+              tenantName={currentTenantQuery.data?.tenant?.name}
+              tenantSlug={currentTenantQuery.data?.tenant?.slug}
+              tenantRole={currentTenantQuery.data?.role ?? session?.user?.tenantRole}
+              isGlobalAdmin={session?.user?.isGlobalAdmin}
+            />
           </div>
         </div>
 
@@ -1052,8 +1125,9 @@ function DynamicGridCanvas({
                 }
                 router.push(pathFromSlug(parentEntry.slug) as any);
               }}
-              className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]"
+              className="shrink-0 px-3 py-2 text-xs font-semibold transition-colors hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]"
               style={{
+                borderRadius: 'var(--tenant-node-radius-pill)',
                 backgroundColor: 'var(--tenant-card-bg)',
                 color: 'var(--tenant-text-secondary)'
               }}
@@ -1088,19 +1162,28 @@ function DynamicGridCanvas({
                   }
                   router.push(pathFromSlug(entry.slug) as any);
                 }}
-                className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
+                className={`shrink-0 px-4 py-2 text-xs font-semibold transition-colors ${
                   isLocked
-                    ? 'text-gray-600'
+                    ? ''
                     : isActive
                       ? 'bg-[var(--tenant-button-primary)] text-[var(--tenant-button-text)]'
                       : 'text-[var(--tenant-text-secondary)] hover:bg-[var(--tenant-button-primary-hover)] hover:text-[var(--tenant-button-text)]'
                 }`}
                 style={
                   isLocked
-                    ? { backgroundColor: 'rgba(255,255,255,0.04)' }
-                    : !isActive
-                      ? { backgroundColor: 'var(--tenant-card-bg)' }
-                      : undefined
+                    ? {
+                        borderRadius: 'var(--tenant-node-radius-pill)',
+                        border: '1px solid var(--tenant-border)',
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                        color: 'var(--tenant-border)'
+                      }
+                    : {
+                        borderRadius: 'var(--tenant-node-radius-pill)',
+                        border: '1px solid var(--tenant-border)',
+                        backgroundColor: isActive
+                          ? 'var(--tenant-button-primary)'
+                          : 'var(--tenant-card-bg)'
+                      }
                 }
               >
                 {entry.name}
@@ -1113,10 +1196,13 @@ function DynamicGridCanvas({
           <style>{`
             .layout .react-grid-placeholder {
               background: rgba(255, 255, 255, 0.25) !important;
-              border-radius: 12px !important;
+              border-radius: var(--tenant-node-radius, 12px) !important;
             }
             .layout .react-grid-item.react-grid-placeholder {
               z-index: 1;
+            }
+            [data-tenant-grid] input::placeholder {
+              color: var(--tenant-text-secondary);
             }
           `}</style>
 
@@ -1128,6 +1214,8 @@ function DynamicGridCanvas({
             layouts={effectiveLayouts}
             breakpoints={GRID_BREAKPOINTS}
             cols={GRID_COLS}
+            isDraggable={isLayoutEditing}
+            isResizable={isLayoutEditing}
             rowHeight={30}
             margin={[16, 16]}
             onBreakpointChange={(breakpoint) =>
@@ -1287,6 +1375,7 @@ function DynamicGridCanvas({
                       ? 'ring-2 ring-sky-400/50'
                       : ''
                   }`}
+                  style={{ borderRadius: 'var(--tenant-node-radius)' }}
                 >
                   {isAdminPreview && item.type !== 'library-asset-item' ? (
                     <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-b from-black/90 via-black/70 to-transparent px-3 py-2">
