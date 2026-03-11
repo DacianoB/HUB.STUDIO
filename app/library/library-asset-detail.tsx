@@ -2,7 +2,11 @@
 
 import Image from 'next/image';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode
+} from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
@@ -28,6 +32,7 @@ type LibraryAssetDetailPanelProps = {
   inGrid?: boolean;
   initialAsset?: InitialAssetData;
   onBack?: () => void;
+  previewMode?: boolean;
 };
 
 type AssetMetadata = {
@@ -35,6 +40,7 @@ type AssetMetadata = {
   showDownloads?: boolean;
   showLikes?: boolean;
   viewInGallery?: boolean;
+  tags?: string[];
 };
 
 type InitialAssetData = {
@@ -56,6 +62,7 @@ type InitialAssetData = {
     downloads: number;
   };
   currentUserLiked?: boolean;
+  tags?: string[];
 };
 
 const LIBRARY_VISITOR_TOKEN_KEY = 'hub.libraryVisitorToken';
@@ -65,6 +72,23 @@ const MOBILE_DOUBLE_TAP_STEP = 2;
 function readMetadata(metadata: unknown): AssetMetadata {
   if (!metadata || typeof metadata !== 'object') return {};
   return metadata as AssetMetadata;
+}
+
+function readLibraryTags(asset: Pick<InitialAssetData, 'tags' | 'metadata'>) {
+  if (Array.isArray(asset.tags)) {
+    return asset.tags.filter(
+      (tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())
+    );
+  }
+
+  const metadata = readMetadata(asset.metadata);
+  if (!Array.isArray(metadata.tags)) {
+    return [] as string[];
+  }
+
+  return metadata.tags.filter(
+    (tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())
+  );
 }
 
 function normalizeSlug(slug: string) {
@@ -101,7 +125,8 @@ export function LibraryAssetDetailPanel({
   embedded = false,
   inGrid = false,
   initialAsset,
-  onBack
+  onBack,
+  previewMode = false
 }: LibraryAssetDetailPanelProps) {
   const router = useRouter();
   const utils = api.useUtils();
@@ -137,10 +162,13 @@ export function LibraryAssetDetailPanel({
       visitorToken
     },
     {
+      enabled: !previewMode,
       retry: false
     }
   );
-  const trackedAsset = assetQuery.data ?? initialAsset;
+  const trackedAsset = previewMode
+    ? initialAsset
+    : (assetQuery.data ?? initialAsset);
   const viewedAssetIdsRef = useRef<Set<string>>(new Set());
   const { mutate: trackAssetInteraction } =
     api.progress.trackAssetInteraction.useMutation({
@@ -245,6 +273,7 @@ export function LibraryAssetDetailPanel({
   }, []);
 
   useEffect(() => {
+    if (previewMode) return;
     const asset = trackedAsset;
     if (!asset) return;
     if (viewedAssetIdsRef.current.has(asset.id)) return;
@@ -267,7 +296,13 @@ export function LibraryAssetDetailPanel({
         }
       }
     );
-  }, [trackedAsset, embedded, trackAssetInteraction, visitorToken]);
+  }, [
+    trackedAsset,
+    embedded,
+    previewMode,
+    trackAssetInteraction,
+    visitorToken
+  ]);
 
   const assetLocationPrefix = useMemo(() => {
     const normalizedBackHref = normalizeSlug(backHref);
@@ -312,6 +347,7 @@ export function LibraryAssetDetailPanel({
     assetLink.targetUrl ?? (asset.type === 'LINK' ? asset.url : null);
   const opensInNewTab = assetLink.openInNewTab ?? true;
   const canOpenLink = asset.type === 'LINK' && Boolean(resolvedTargetUrl);
+  const itemTags = readLibraryTags(asset);
   const stats = [
     showLikes ? `${asset.stats?.likes ?? 0} likes` : null,
     showViews ? `${asset.stats?.views ?? 0} views` : null,
@@ -362,6 +398,13 @@ export function LibraryAssetDetailPanel({
   const closeExpandedModal = () => {
     resetZoomState();
     setIsExpanded(false);
+  };
+
+  const handlePreviewAnchorClick = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!previewMode) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
   };
 
   const updateZoomStep = (
@@ -597,6 +640,9 @@ export function LibraryAssetDetailPanel({
               <PinActionButton
                 label={`Back to ${pageName}`}
                 onClick={() => {
+                  if (previewMode) {
+                    return;
+                  }
                   if (onBack) {
                     onBack();
                     return;
@@ -611,10 +657,12 @@ export function LibraryAssetDetailPanel({
                 <PinActionButton
                   label={asset.currentUserLiked ? 'Unlike item' : 'Like item'}
                   onClick={() =>
-                    toggleLike.mutate({
-                      assetId: asset.id,
-                      visitorToken
-                    })
+                    previewMode
+                      ? undefined
+                      : toggleLike.mutate({
+                          assetId: asset.id,
+                          visitorToken
+                        })
                   }
                   className={`bg-transparent px-0 ${asset.currentUserLiked ? 'text-[#ff4964]' : ''}`}
                 >
@@ -631,13 +679,14 @@ export function LibraryAssetDetailPanel({
                   href={asset.url}
                   download
                   className="inline-flex h-11 items-center gap-2 rounded-full px-4 text-[var(--tenant-text-main)] transition hover:text-[var(--tenant-text-secondary)]"
-                  onClick={() =>
+                  onClick={(event) => {
+                    if (handlePreviewAnchorClick(event)) return;
                     markDownloaded.mutate({
                       productId: asset.productId,
                       assetId: asset.id,
                       visitorToken
-                    })
-                  }
+                    });
+                  }}
                 >
                   <Download className="h-5 w-5" />
                   <span className="text-sm font-semibold">
@@ -661,7 +710,8 @@ export function LibraryAssetDetailPanel({
                 target={opensInNewTab ? '_blank' : '_self'}
                 rel={opensInNewTab ? 'noreferrer noopener' : undefined}
                 className="inline-flex h-11 items-center gap-2 rounded-full bg-[#e9e3da] px-4 text-sm font-semibold text-[var(--tenant-text-main)] transition hover:bg-[#ddd5ca]"
-                onClick={() =>
+                onClick={(event) => {
+                  if (handlePreviewAnchorClick(event)) return;
                   trackAssetInteraction({
                     productId: asset.productId,
                     assetId: asset.id,
@@ -671,8 +721,8 @@ export function LibraryAssetDetailPanel({
                       source: 'library-gallery-inline',
                       targetUrl: resolvedTargetUrl
                     }
-                  })
-                }
+                  });
+                }}
               >
                 <Link2 className="h-5 w-5" />
                 <span>Visit</span>
@@ -739,7 +789,8 @@ export function LibraryAssetDetailPanel({
                   rel={opensInNewTab ? 'noreferrer noopener' : undefined}
                   className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/90 text-black shadow-sm transition hover:bg-white"
                   aria-label="Open link"
-                  onClick={() =>
+                  onClick={(event) => {
+                    if (handlePreviewAnchorClick(event)) return;
                     trackAssetInteraction({
                       productId: asset.productId,
                       assetId: asset.id,
@@ -749,8 +800,8 @@ export function LibraryAssetDetailPanel({
                         source: 'library-gallery-inline',
                         targetUrl: resolvedTargetUrl
                       }
-                    })
-                  }
+                    });
+                  }}
                 >
                   <Link2 className="h-5 w-5" />
                 </a>
@@ -767,6 +818,18 @@ export function LibraryAssetDetailPanel({
                 <p className="mt-2 line-clamp-2 text-sm text-black/65">
                   {asset.description.trim()}
                 </p>
+              ) : null}
+              {itemTags.length ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {itemTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-black/10 bg-black/5 px-2 py-1 text-[11px] font-medium text-black/70"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               ) : null}
             </div>
 
@@ -1106,6 +1169,24 @@ export function LibraryAssetDetailPanel({
                 >
                   {asset.description?.trim() || ''}
                 </div>
+                {itemTags.length ? (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {itemTags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="border px-2 py-1 text-[11px] font-medium"
+                        style={{
+                          borderRadius: 'var(--tenant-node-radius-sm)',
+                          borderColor: 'var(--tenant-border)',
+                          backgroundColor: 'rgba(0,0,0,0.18)',
+                          color: 'var(--tenant-text-main)'
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 {canOpenLink && resolvedTargetUrl ? (
                   <a
                     href={resolvedTargetUrl}

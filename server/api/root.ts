@@ -7,6 +7,7 @@ import { productFeaturesRouter } from "~/server/api/routers/product-features";
 import { productsRouter } from "~/server/api/routers/products";
 import { productStepsRouter } from "~/server/api/routers/product-steps";
 import { progressRouter } from "~/server/api/routers/progress";
+import { statsRouter } from "~/server/api/routers/stats";
 import { tenantsRouter } from "~/server/api/routers/tenants";
 import { uploadsRouter } from "~/server/api/routers/uploads";
 import { usersRouter } from "~/server/api/routers/users";
@@ -19,6 +20,7 @@ export const appRouter = createTRPCRouter({
   productFeatures: productFeaturesRouter,
   productSteps: productStepsRouter,
   progress: progressRouter,
+  stats: statsRouter,
   interactions: interactionsRouter,
   nodePages: nodePagesRouter,
   users: usersRouter,

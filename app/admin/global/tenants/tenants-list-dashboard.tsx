@@ -1,10 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ArrowRight, Building2, Search } from "lucide-react";
 
+import {
+  ConsoleBadge,
+  ConsoleEmpty,
+  ConsoleSection,
+  consoleInputClassName,
+  consoleMutedTextClassName,
+} from "~/app/admin/_components/console-shell";
 import { GlobalAdminShell } from "~/app/admin/global/tenants/global-admin-shell";
+import { cn } from "~/lib/utils";
 import { api } from "~/trpc/react";
 
 function formatLimit(limit: number | null | undefined) {
@@ -15,103 +23,109 @@ export function TenantsListDashboard() {
   const [search, setSearch] = useState("");
   const tenantsQuery = api.tenants.listAll.useQuery();
 
-  const tenants = useMemo(() => {
+  const tenants = (tenantsQuery.data ?? []).filter((tenant) => {
     const query = search.trim().toLowerCase();
-    const entries = tenantsQuery.data ?? [];
-    if (!query) return entries;
-
-    return entries.filter((tenant) => {
-      return (
-        tenant.name.toLowerCase().includes(query) ||
-        tenant.slug.toLowerCase().includes(query)
-      );
-    });
-  }, [search, tenantsQuery.data]);
+    if (!query) return true;
+    return (
+      tenant.name.toLowerCase().includes(query) ||
+      tenant.slug.toLowerCase().includes(query)
+    );
+  });
 
   return (
     <GlobalAdminShell
-      title="Tenant Policies"
-      description="Search tenants, inspect usage, and open the global policy editor for each white-label company."
+      title="Tenants"
+      description="Review tenant health, quotas, and policy posture before opening a detailed policy editor."
     >
-      <div className="space-y-6">
-        <section className="rounded-3xl border border-white/10 bg-black/25 p-5">
-          <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/30 px-4 py-3">
-            <Search className="h-4 w-4 text-zinc-500" />
+      <div className="space-y-5">
+        <ConsoleSection
+          title="Tenant directory"
+          description="Search by company name or slug, then open the tenant policy workspace."
+        >
+          <label className="relative block max-w-[420px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7f7769]" />
             <input
-              className="w-full bg-transparent text-sm text-white outline-none placeholder:text-zinc-500"
+              className={cn(consoleInputClassName, "pl-9")}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by tenant name or slug"
+              placeholder="Search tenant name or slug"
             />
           </label>
-        </section>
+        </ConsoleSection>
 
-        <section className="grid gap-4 lg:grid-cols-2">
-          {tenantsQuery.isLoading
-            ? Array.from({ length: 4 }).map((_, index) => (
-                <div
-                  key={`loading-${index}`}
-                  className="h-[268px] animate-pulse rounded-3xl border border-white/10 bg-black/20"
-                />
-              ))
-            : tenants.map((tenant) => (
-              <Link
-                key={tenant.id}
-                href={`/admin/global/tenants/${tenant.id}`}
-                className="group rounded-3xl border border-white/10 bg-black/25 p-5 transition hover:border-orange-400/40 hover:bg-black/35"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-                      <Building2 className="h-5 w-5 text-orange-200" />
+        {tenants.length ? (
+          <ConsoleSection
+            title="Tenant list"
+            description="Usage and limits are shown together here so you can spot pressure before opening a policy."
+          >
+            <div className="overflow-hidden rounded-[10px] border border-[#2e2b26]">
+              <div className="divide-y divide-[#2a2823]">
+                {tenants.map((tenant) => (
+                  <Link
+                    key={tenant.id}
+                    href={`/admin/global/tenants/${tenant.id}` as any}
+                    className="grid gap-4 bg-[#171613] px-4 py-4 transition hover:bg-[#1d1a16] xl:grid-cols-[minmax(0,1.1fr)_repeat(4,minmax(0,0.65fr))_170px]"
+                  >
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-[10px] border border-[#312d27] bg-[#11100d] text-[#c9b089]">
+                          <Building2 className="h-4 w-4" />
+                        </div>
+                        <p className="text-sm font-medium text-[#f4efe5]">{tenant.name}</p>
+                        <ConsoleBadge tone="accent">
+                          {tenant.policy.joinMode.replaceAll("_", " ")}
+                        </ConsoleBadge>
+                      </div>
+                      <p className={`mt-2 text-sm ${consoleMutedTextClassName}`}>{tenant.slug}</p>
                     </div>
-                    <h2 className="mt-4 text-xl font-semibold text-white">{tenant.name}</h2>
-                    <p className="mt-1 text-sm text-zinc-400">{tenant.slug}</p>
-                  </div>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-300">
-                    {tenant.policy.joinMode.replaceAll("_", " ")}
-                  </span>
-                </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Usage</p>
-                    <div className="mt-3 space-y-1 text-sm text-zinc-300">
-                      <p>{tenant.usage.activeMembers} active members</p>
-                      <p>{tenant.usage.outstandingInvites} outstanding invites</p>
-                      <p>{tenant.usage.products} active products</p>
-                      <p>{tenant.usage.pages} custom pages</p>
+                    <div>
+                      <p className={`text-sm ${consoleMutedTextClassName}`}>Members</p>
+                      <p className="mt-1 text-sm font-medium text-[#f4efe5]">
+                        {tenant.usage.activeMembers} / {formatLimit(tenant.policy.maxActiveMembers)}
+                      </p>
                     </div>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Limits</p>
-                    <div className="mt-3 space-y-1 text-sm text-zinc-300">
-                      <p>Members: {formatLimit(tenant.policy.maxActiveMembers)}</p>
-                      <p>Invites: {formatLimit(tenant.policy.maxOutstandingInvites)}</p>
-                      <p>Products: {formatLimit(tenant.policy.maxProducts)}</p>
-                      <p>Pages: {formatLimit(tenant.policy.maxPages)}</p>
+                    <div>
+                      <p className={`text-sm ${consoleMutedTextClassName}`}>Invites</p>
+                      <p className="mt-1 text-sm font-medium text-[#f4efe5]">
+                        {tenant.usage.outstandingInvites} /{" "}
+                        {formatLimit(tenant.policy.maxOutstandingInvites)}
+                      </p>
                     </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4 text-sm">
-                  <span className="text-zinc-500">
-                    {tenant.policy.allowBrandingEditor ? "Branding enabled" : "Branding locked"}
-                  </span>
-                  <span className="inline-flex items-center gap-2 text-orange-200">
-                    Open editor
-                    <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                  </span>
-                </div>
-              </Link>
-            ))}
-        </section>
-
-        {!tenantsQuery.isLoading && !tenants.length ? (
-          <div className="rounded-3xl border border-dashed border-white/10 bg-black/20 p-12 text-center text-sm text-zinc-500">
-            No tenants matched this search.
-          </div>
-        ) : null}
+                    <div>
+                      <p className={`text-sm ${consoleMutedTextClassName}`}>Products</p>
+                      <p className="mt-1 text-sm font-medium text-[#f4efe5]">
+                        {tenant.usage.products} / {formatLimit(tenant.policy.maxProducts)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className={`text-sm ${consoleMutedTextClassName}`}>Pages</p>
+                      <p className="mt-1 text-sm font-medium text-[#f4efe5]">
+                        {tenant.usage.pages} / {formatLimit(tenant.policy.maxPages)}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 xl:justify-end">
+                      <ConsoleBadge
+                        tone={tenant.policy.allowBrandingEditor ? "success" : "warning"}
+                      >
+                        {tenant.policy.allowBrandingEditor ? "Branding on" : "Branding off"}
+                      </ConsoleBadge>
+                      <span className="inline-flex items-center gap-2 text-sm font-medium text-[#d7c29f]">
+                        Open
+                        <ArrowRight className="h-4 w-4" />
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </ConsoleSection>
+        ) : (
+          <ConsoleEmpty
+            title="No tenants matched this search"
+            description="Try a different company name or tenant slug."
+          />
+        )}
       </div>
     </GlobalAdminShell>
   );

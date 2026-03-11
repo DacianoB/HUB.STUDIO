@@ -53,14 +53,6 @@ async function resolveTenantAccess(input: {
     });
   }
 
-  if (membership?.status === "ACTIVE") {
-    return {
-      tenantId: membership.tenantId,
-      tenantSlug: membership.tenant.slug,
-      role: membership.role,
-    };
-  }
-
   const requestedTenant =
     tenantId || tenantSlug
       ? await db.tenant.findFirst({
@@ -86,6 +78,14 @@ async function resolveTenantAccess(input: {
       tenantId: requestedTenant.id,
       tenantSlug: requestedTenant.slug,
       role: "OWNER",
+    };
+  }
+
+  if (membership?.status === "ACTIVE") {
+    return {
+      tenantId: membership.tenantId,
+      tenantSlug: membership.tenant.slug,
+      role: membership.role,
     };
   }
 
@@ -312,9 +312,15 @@ export async function createTRPCContext(opts?: CreateContextOptions) {
   const session = await getServerAuthSession();
   const headerTenantId = opts?.req?.headers.get("x-tenant-id");
   const headerTenantSlug = opts?.req?.headers.get("x-tenant-slug");
+  const sessionTenantId = session?.user?.activeTenantId ?? null;
+  const sessionTenantSlug = session?.activeTenant?.slug ?? null;
+  const resolvedTenantId =
+    headerTenantId ?? (headerTenantSlug ? null : sessionTenantId);
+  const resolvedTenantSlug =
+    headerTenantSlug ?? (headerTenantId ? null : sessionTenantSlug);
   const requestedTenant = await resolveRequestedTenant({
-    tenantId: headerTenantId,
-    tenantSlug: headerTenantSlug,
+    tenantId: resolvedTenantId,
+    tenantSlug: resolvedTenantSlug,
   });
   const tenantAccess =
     session?.user?.id
@@ -322,8 +328,8 @@ export async function createTRPCContext(opts?: CreateContextOptions) {
           userId: session.user.id,
           isGlobalAdmin: Boolean(session.user.isGlobalAdmin),
           userEmail: session.user.email,
-          tenantId: headerTenantId,
-          tenantSlug: headerTenantSlug,
+          tenantId: resolvedTenantId,
+          tenantSlug: resolvedTenantSlug,
         })
       : null;
 

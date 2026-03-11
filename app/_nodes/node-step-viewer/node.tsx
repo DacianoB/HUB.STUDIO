@@ -4,14 +4,18 @@ import Image from 'next/image';
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
   ChevronDown,
   FileArchive,
   FileImage,
   FileText,
   FileVideo,
+  RotateCcw,
   Link2,
   LockKeyhole,
+  PlayIcon,
   X,
   Unlock
 } from 'lucide-react';
@@ -21,7 +25,12 @@ import { createPortal } from 'react-dom';
 import { LibraryAssetDetailPanel } from '~/app/library/library-asset-detail';
 import HoverPlayCard from '~/components/ui/hover-play-card';
 import { Button } from '~/components/ui/button';
+import {
+  readStepQuestionnaireAttempt,
+  type StepQuestionnaire
+} from '~/lib/step-questionnaire';
 import { api } from '~/trpc/react';
+import { Play } from 'next/font/google';
 
 type DashboardNodeStepViewerProps = {
   props?: Record<string, unknown>;
@@ -44,16 +53,6 @@ type StepAsset = {
   sourceLibraryAssetId?: string;
 };
 
-type StepQuestionnaire = {
-  prompt: string;
-  options: Array<{
-    id: string;
-    label: string;
-  }>;
-  correctOptionId?: string;
-  successMessage?: string;
-} | null;
-
 type CourseViewerStep = {
   id: string;
   title: string;
@@ -65,8 +64,21 @@ type CourseViewerStep = {
   blockedByStepId?: string | null;
   content: string;
   coverImageUrl: string;
-  questionnaire: StepQuestionnaire;
+  questionnaire: StepQuestionnaire | null;
+  progress?: {
+    status: string;
+    completedAt?: string | Date | null;
+    metadata?: unknown;
+  } | null;
   assets: StepAsset[];
+};
+
+type TestResult = {
+  passed: boolean;
+  correctCount: number;
+  totalQuestions: number;
+  passingScore: number;
+  message: string;
 };
 
 function readProductId(props?: Record<string, unknown>) {
@@ -77,6 +89,66 @@ function readNodeTitle(props?: Record<string, unknown>) {
   return typeof props?.title === 'string' && props.title.trim()
     ? props.title.trim()
     : 'Course steps';
+}
+
+function readQuestionnaireAttempt(step: CourseViewerStep) {
+  if (!step.progress?.metadata || typeof step.progress.metadata !== 'object') {
+    return undefined;
+  }
+
+  return readStepQuestionnaireAttempt(
+    (step.progress.metadata as { questionnaire?: unknown }).questionnaire
+  );
+}
+
+function readPortalThemeStyle() {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const themeRoot =
+    (document.activeElement instanceof HTMLElement
+      ? document.activeElement.closest('[data-tenant-grid]')
+      : null) ?? document.querySelector('[data-tenant-grid]');
+
+  if (!(themeRoot instanceof HTMLElement)) {
+    return {};
+  }
+
+  const computed = window.getComputedStyle(themeRoot);
+  return {
+    '--tenant-bg-main': computed.getPropertyValue('--tenant-bg-main').trim(),
+    '--tenant-bg-secondary': computed
+      .getPropertyValue('--tenant-bg-secondary')
+      .trim(),
+    '--tenant-text-main': computed
+      .getPropertyValue('--tenant-text-main')
+      .trim(),
+    '--tenant-text-secondary': computed
+      .getPropertyValue('--tenant-text-secondary')
+      .trim(),
+    '--tenant-border': computed.getPropertyValue('--tenant-border').trim(),
+    '--tenant-accent': computed.getPropertyValue('--tenant-accent').trim(),
+    '--tenant-button-primary': computed
+      .getPropertyValue('--tenant-button-primary')
+      .trim(),
+    '--tenant-button-primary-hover': computed
+      .getPropertyValue('--tenant-button-primary-hover')
+      .trim(),
+    '--tenant-button-text': computed
+      .getPropertyValue('--tenant-button-text')
+      .trim(),
+    '--tenant-card-bg': computed.getPropertyValue('--tenant-card-bg').trim(),
+    '--tenant-node-radius': computed
+      .getPropertyValue('--tenant-node-radius')
+      .trim(),
+    '--tenant-node-radius-sm': computed
+      .getPropertyValue('--tenant-node-radius-sm')
+      .trim(),
+    '--tenant-node-radius-pill': computed
+      .getPropertyValue('--tenant-node-radius-pill')
+      .trim()
+  } as CSSProperties;
 }
 
 function resolveStepAssetHref(asset: StepAsset) {
@@ -172,7 +244,7 @@ function StepAssetModal({
   const href = resolveStepAssetHref(asset);
   const canDownload = asset.type !== 'LINK' && Boolean(asset.url.trim());
   const canOpen = Boolean(href);
-  const [portalThemeStyle, setPortalThemeStyle] = useState<CSSProperties>({});
+  const portalThemeStyle = readPortalThemeStyle();
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -184,57 +256,6 @@ function StepAssetModal({
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const themeRoot =
-      (document.activeElement instanceof HTMLElement
-        ? document.activeElement.closest('[data-tenant-grid]')
-        : null) ?? document.querySelector('[data-tenant-grid]');
-
-    if (!(themeRoot instanceof HTMLElement)) {
-      return;
-    }
-
-    const computed = window.getComputedStyle(themeRoot);
-    setPortalThemeStyle({
-      '--tenant-bg-main': computed.getPropertyValue('--tenant-bg-main').trim(),
-      '--tenant-bg-secondary': computed
-        .getPropertyValue('--tenant-bg-secondary')
-        .trim(),
-      '--tenant-text-main': computed
-        .getPropertyValue('--tenant-text-main')
-        .trim(),
-      '--tenant-text-secondary': computed
-        .getPropertyValue('--tenant-text-secondary')
-        .trim(),
-      '--tenant-border': computed.getPropertyValue('--tenant-border').trim(),
-      '--tenant-accent': computed.getPropertyValue('--tenant-accent').trim(),
-      '--tenant-button-primary': computed
-        .getPropertyValue('--tenant-button-primary')
-        .trim(),
-      '--tenant-button-primary-hover': computed
-        .getPropertyValue('--tenant-button-primary-hover')
-        .trim(),
-      '--tenant-button-text': computed
-        .getPropertyValue('--tenant-button-text')
-        .trim(),
-      '--tenant-card-bg': computed.getPropertyValue('--tenant-card-bg').trim(),
-      '--tenant-node-radius': computed
-        .getPropertyValue('--tenant-node-radius')
-        .trim(),
-      '--tenant-node-radius-sm': computed
-        .getPropertyValue('--tenant-node-radius-sm')
-        .trim(),
-      '--tenant-node-radius-pill': computed
-        .getPropertyValue('--tenant-node-radius-pill')
-        .trim()
-    } as CSSProperties);
-  }, []);
-
   if (typeof document === 'undefined') {
     return null;
   }
@@ -248,7 +269,7 @@ function StepAssetModal({
       {asset.sourceLibraryAssetId ? (
         <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6 ">
           <div
-            className="relative h-[92vh] w-full max-w-[900px] rounded-[var(--tenant-node-radius)] "
+            className="relative max-h-[92vh] w-full max-w-[900px] rounded-[var(--tenant-node-radius)] "
             onClick={(event) => event.stopPropagation()}
           >
             <LibraryAssetDetailPanel
@@ -448,6 +469,303 @@ function StepAssetModal({
   );
 }
 
+function StepTestModal({
+  step,
+  answers,
+  result,
+  isPending,
+  onAnswerChange,
+  onClose,
+  onRetry,
+  onSubmit
+}: {
+  step: CourseViewerStep;
+  answers: Record<string, string>;
+  result: TestResult | null;
+  isPending: boolean;
+  onAnswerChange: (questionId: string, answerId: string) => void;
+  onClose: () => void;
+  onRetry: () => void;
+  onSubmit: () => void;
+}) {
+  const portalThemeStyle = readPortalThemeStyle();
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const questions = step.questionnaire?.questions ?? [];
+  const currentQuestion = questions[currentQuestionIndex] ?? null;
+  const answeredCount = questions.filter(
+    (question) => answers[question.id]
+  ).length;
+  const isCurrentQuestionAnswered = currentQuestion
+    ? Boolean(answers[currentQuestion.id])
+    : false;
+  const isLastQuestion = currentQuestionIndex === questions.length - 1;
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  if (
+    typeof document === 'undefined' ||
+    !step.questionnaire ||
+    !questions.length
+  ) {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999]" style={portalThemeStyle}>
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6">
+        <div
+          className="relative flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-[20px] border"
+          style={{
+            borderColor: 'var(--tenant-border)',
+            backgroundColor: 'var(--tenant-card-bg)'
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div
+            className="flex items-center justify-between border-b px-5 py-4"
+            style={{ borderColor: 'var(--tenant-border)' }}
+          >
+            <div>
+              <p
+                className="text-[11px] uppercase tracking-[0.18em]"
+                style={{ color: 'var(--tenant-text-secondary)' }}
+              >
+                Step test
+              </p>
+              <h3
+                className="mt-1 text-lg font-semibold"
+                style={{ color: 'var(--tenant-text-main)' }}
+              >
+                {step.title}
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border"
+              style={{
+                borderColor: 'var(--tenant-border)',
+                color: 'var(--tenant-text-main)'
+              }}
+              aria-label="Close test"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {result ? (
+            <div className="flex flex-1 flex-col justify-between gap-6 px-5 py-5 sm:px-6">
+              <div className="space-y-4">
+                <div
+                  className="inline-flex rounded-full border px-3 py-1 text-xs font-semibold"
+                  style={{
+                    borderColor: result.passed
+                      ? 'color-mix(in srgb, var(--tenant-button-primary) 35%, transparent)'
+                      : 'color-mix(in srgb, #ef4444 45%, transparent)',
+                    color: result.passed
+                      ? 'var(--tenant-button-primary)'
+                      : '#fca5a5'
+                  }}
+                >
+                  {result.passed ? 'Passed' : 'Failed'}
+                </div>
+                <div>
+                  <p
+                    className="text-2xl font-semibold"
+                    style={{ color: 'var(--tenant-text-main)' }}
+                  >
+                    {result.message}
+                  </p>
+                  <p
+                    className="mt-2 text-sm leading-6"
+                    style={{ color: 'var(--tenant-text-secondary)' }}
+                  >
+                    Score {result.correctCount} of {result.totalQuestions}. You
+                    need {result.passingScore} correct answer
+                    {result.passingScore === 1 ? '' : 's'} to pass.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                {!result.passed ? (
+                  <Button
+                    type="button"
+                    className="h-11 rounded-xl border px-4 text-sm font-semibold"
+                    style={{
+                      borderColor: 'var(--tenant-border)',
+                      color: 'var(--tenant-text-main)',
+                      backgroundColor: 'transparent'
+                    }}
+                    onClick={() => {
+                      setCurrentQuestionIndex(0);
+                      onRetry();
+                    }}
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Try again
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  className="h-11 rounded-xl px-4 text-sm font-semibold"
+                  style={{
+                    backgroundColor: 'var(--tenant-button-primary)',
+                    color: 'var(--tenant-button-text)'
+                  }}
+                  onClick={onClose}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+                <div className="flex items-center justify-between gap-3">
+                  <p
+                    className="text-sm font-medium"
+                    style={{ color: 'var(--tenant-text-main)' }}
+                  >
+                    Question {currentQuestionIndex + 1} of {questions.length}
+                  </p>
+                  <p
+                    className="text-xs"
+                    style={{ color: 'var(--tenant-text-secondary)' }}
+                  >
+                    {answeredCount} of {questions.length} answered
+                  </p>
+                </div>
+
+                <div
+                  className="mt-3 h-1.5 overflow-hidden rounded-full"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                >
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${((currentQuestionIndex + 1) / questions.length) * 100}%`,
+                      backgroundColor: 'var(--tenant-button-primary)'
+                    }}
+                  />
+                </div>
+
+                {currentQuestion ? (
+                  <div className="mt-5">
+                    <p
+                      className="text-lg font-semibold leading-7"
+                      style={{ color: 'var(--tenant-text-main)' }}
+                    >
+                      {currentQuestion.prompt}
+                    </p>
+                    <div className="mt-4 space-y-2">
+                      {currentQuestion.options.map((option) => (
+                        <label
+                          key={option.id}
+                          className="flex cursor-pointer items-center gap-3 rounded-[14px] border px-3 py-3 text-sm transition"
+                          style={{
+                            borderColor:
+                              answers[currentQuestion.id] === option.id
+                                ? 'var(--tenant-button-primary)'
+                                : 'var(--tenant-border)',
+                            backgroundColor:
+                              answers[currentQuestion.id] === option.id
+                                ? 'color-mix(in srgb, var(--tenant-button-primary) 12%, transparent)'
+                                : 'transparent',
+                            color: 'var(--tenant-text-main)'
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={`step-question-${step.id}-${currentQuestion.id}`}
+                            checked={answers[currentQuestion.id] === option.id}
+                            onChange={() =>
+                              onAnswerChange(currentQuestion.id, option.id)
+                            }
+                          />
+                          <span>{option.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-4 sm:px-6"
+                style={{ borderColor: 'var(--tenant-border)' }}
+              >
+                <Button
+                  type="button"
+                  className="h-11 rounded-xl border px-4 text-sm font-semibold"
+                  style={{
+                    borderColor: 'var(--tenant-border)',
+                    color: 'var(--tenant-text-main)',
+                    backgroundColor: 'transparent'
+                  }}
+                  disabled={currentQuestionIndex === 0}
+                  onClick={() =>
+                    setCurrentQuestionIndex((current) =>
+                      Math.max(0, current - 1)
+                    )
+                  }
+                >
+                  <ChevronLeft className="mr-2 h-4 w-4" />
+                  Previous
+                </Button>
+
+                {isLastQuestion ? (
+                  <Button
+                    type="button"
+                    className="h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50"
+                    style={{
+                      backgroundColor: 'var(--tenant-button-primary)',
+                      color: 'var(--tenant-button-text)'
+                    }}
+                    disabled={answeredCount !== questions.length || isPending}
+                    onClick={onSubmit}
+                  >
+                    {isPending ? 'Checking...' : 'Submit test'}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    className="h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50"
+                    style={{
+                      backgroundColor: 'var(--tenant-button-primary)',
+                      color: 'var(--tenant-button-text)'
+                    }}
+                    disabled={!isCurrentQuestionAnswered}
+                    onClick={() =>
+                      setCurrentQuestionIndex((current) =>
+                        Math.min(questions.length - 1, current + 1)
+                      )
+                    }
+                  >
+                    Next
+                    <ChevronRight className="ml-2 h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function StepStatusNode({
   isCompleted,
   isCurrent,
@@ -459,22 +777,22 @@ function StepStatusNode({
 }) {
   const style: CSSProperties = isCompleted
     ? {
-        borderColor: 'var(--tenant-button-primary)',
+        borderColor: 'var(--complete)', //
         backgroundColor:
-          'color-mix(in srgb, var(--tenant-button-primary) 12%, transparent)',
+          'color-mix(in srgb, var(--complete) 50%, var(--tenant-card-bg))',
         color: 'var(--tenant-text-main)'
       }
     : isCurrent
       ? {
           borderColor: 'var(--tenant-button-primary)',
           backgroundColor:
-            'color-mix(in srgb, var(--tenant-button-primary) 8%, var(--tenant-card-bg))',
+            'color-mix(in srgb, var(--tenant-button-primary) 50%, var(--tenant-card-bg))',
           color: 'var(--tenant-text-main)'
         }
       : isLocked
         ? {
             borderColor: 'var(--tenant-border)',
-            backgroundColor: 'transparent',
+            backgroundColor: 'var(--tenant-card-bg)',
             color: 'var(--tenant-text-secondary)'
           }
         : {
@@ -485,15 +803,15 @@ function StepStatusNode({
 
   return (
     <div
-      className="flex h-8 w-8 items-center justify-center rounded-full border"
+      className="flex h-11 w-11 items-center justify-center rounded-full border"
       style={style}
     >
       {isCompleted ? (
-        <Check className="h-6 w-6" />
+        <Check className="h-5 w-5" />
       ) : isLocked ? (
-        <LockKeyhole className="h-6 w-6" />
+        <LockKeyhole className="h-5 w-5" />
       ) : (
-        <Unlock className="h-6 w-6" />
+        <PlayIcon className="h-5 w-5" />
       )}
     </div>
   );
@@ -507,9 +825,13 @@ export function DashboardNodeStepViewer({
   const productId = readProductId(props);
   const nodeTitle = readNodeTitle(props);
   const [expandedStepId, setExpandedStepId] = useState('');
-  const [selectedAnswers, setSelectedAnswers] = useState<
-    Record<string, string>
+  const [testAnswersByStepId, setTestAnswersByStepId] = useState<
+    Record<string, Record<string, string>>
   >({});
+  const [testResultsByStepId, setTestResultsByStepId] = useState<
+    Record<string, TestResult>
+  >({});
+  const [activeTestStepId, setActiveTestStepId] = useState('');
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [feedbackByStepId, setFeedbackByStepId] = useState<
     Record<string, string>
@@ -536,6 +858,16 @@ export function DashboardNodeStepViewer({
         setFeedbackByStepId((current) => ({
           ...current,
           [variables.stepId]: result.successMessage
+        }));
+        setTestResultsByStepId((current) => ({
+          ...current,
+          [variables.stepId]: {
+            passed: result.passed,
+            correctCount: result.correctCount,
+            totalQuestions: result.totalQuestions,
+            passingScore: result.passingScore,
+            message: result.successMessage
+          }
         }));
         await utils.products.courseViewerByProductId.invalidate({ productId });
       },
@@ -580,6 +912,64 @@ export function DashboardNodeStepViewer({
         .find((asset) => asset.id === selectedAssetId) ?? null,
     [selectedAssetId, steps]
   );
+  const activeTestStep = useMemo(
+    () => steps.find((step) => step.id === activeTestStepId) ?? null,
+    [activeTestStepId, steps]
+  );
+
+  function openTest(step: CourseViewerStep) {
+    setActiveTestStepId(step.id);
+    setTestResultsByStepId((current) => {
+      const next = { ...current };
+      delete next[step.id];
+      return next;
+    });
+    setFeedbackByStepId((current) => ({
+      ...current,
+      [step.id]: ''
+    }));
+  }
+
+  function updateTestAnswer(
+    stepId: string,
+    questionId: string,
+    answerId: string
+  ) {
+    setTestAnswersByStepId((current) => ({
+      ...current,
+      [stepId]: {
+        ...(current[stepId] ?? {}),
+        [questionId]: answerId
+      }
+    }));
+  }
+
+  function retryTest(step: CourseViewerStep) {
+    setTestAnswersByStepId((current) => ({
+      ...current,
+      [step.id]: {}
+    }));
+    setTestResultsByStepId((current) => {
+      const next = { ...current };
+      delete next[step.id];
+      return next;
+    });
+  }
+
+  function submitTest(step: CourseViewerStep) {
+    const answers = Object.entries(testAnswersByStepId[step.id] ?? {}).map(
+      ([questionId, answerId]) => ({
+        questionId,
+        answerId
+      })
+    );
+
+    questionnaireMutation.mutate({
+      productId,
+      stepId: step.id,
+      answers
+    });
+  }
 
   if (!productId) {
     return (
@@ -724,7 +1114,7 @@ export function DashboardNodeStepViewer({
 
       <div className="relative mt-4 pl-10">
         <div
-          className="absolute bottom-3 left-[17px] top-3 w-px"
+          className="absolute bottom-3 left-2 top-3 w-px"
           style={{ backgroundColor: 'var(--tenant-border)' }}
         />
         <div className="space-y-3">
@@ -733,30 +1123,31 @@ export function DashboardNodeStepViewer({
             const isCurrent = currentStepId === step.id;
             const isLocked = !step.isUnlocked;
             const hasQuestionnaire = Boolean(step.questionnaire);
-            const selectedAnswer = selectedAnswers[step.id] ?? '';
+            const questionnaireAttempt = readQuestionnaireAttempt(step);
+            const questionCount = step.questionnaire?.questions.length ?? 0;
             const feedback = feedbackByStepId[step.id];
             const isStepBusy =
               completeStepMutation.isPending || questionnaireMutation.isPending;
 
             return (
               <article key={step.id} className="relative">
-                <div className="absolute -left-12 top-6">
+                <div className="absolute -left-8 -translate-x-1/2 top-1">
                   <StepStatusNode
                     isCompleted={step.isCompleted}
                     isCurrent={isCurrent}
                     isLocked={isLocked}
                   />
                 </div>
-                {step.coverImageUrl ? (
-                  <div
-                    className="absolute inset-0 z-0 overflow-hidden rounded-[var(--tenant-node-radius)] border"
-                    style={{
-                      borderColor: 'var(--tenant-border)',
-                      backgroundColor: 'var(--tenant-card-bg)'
-                    }}
-                  >
-                    <div className="absolute inset-0 z-10 bg-gradient-to-r from-[var(--tenant-card-bg)]  to-black/70 h-full w-full"></div>
 
+                <div
+                  className="absolute inset-0 z-0 overflow-hidden rounded-[var(--tenant-node-radius)] border"
+                  style={{
+                    borderColor: 'var(--tenant-border)',
+                    backgroundColor: 'var(--tenant-card-bg)'
+                  }}
+                >
+                  <div className="absolute inset-0 z-10 bg-gradient-to-r from-[var(--tenant-card-bg)]  to-black/70 h-full w-full"></div>
+                  {step.coverImageUrl ? (
                     <div
                       className="absolute inset-0 z-0 h-full w-full bg-cover bg-center"
                       style={{
@@ -764,8 +1155,9 @@ export function DashboardNodeStepViewer({
                         backgroundImage: `url(${step.coverImageUrl})`
                       }}
                     />
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
+
                 <div
                   className="overflow-hidden relative z-10 rounded-[var(--tenant-node-radius)]  transition-all"
                   style={{
@@ -779,7 +1171,7 @@ export function DashboardNodeStepViewer({
                 >
                   <button
                     type="button"
-                    className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left sm:px-5"
+                    className="flex w-full items-center justify-between gap-3 py-6 text-left px-8"
                     onClick={() =>
                       setExpandedStepId((current) =>
                         (current || currentStepId) === step.id ? '' : step.id
@@ -792,36 +1184,15 @@ export function DashboardNodeStepViewer({
                         style={{ color: 'var(--tenant-text-secondary)' }}
                       >
                         <span>Step {index + 1}</span>
-                        <span
-                          className="rounded-full border px-2 py-1 tracking-[0.18em]"
-                          style={{
-                            borderColor: step.isCompleted
-                              ? 'color-mix(in srgb, var(--tenant-button-primary) 35%, transparent)'
-                              : isLocked
-                                ? 'color-mix(in srgb, var(--tenant-border) 75%, white)'
-                                : 'color-mix(in srgb, var(--tenant-accent) 30%, transparent)',
-                            color: step.isCompleted
-                              ? 'var(--tenant-button-primary)'
-                              : isLocked
-                                ? 'var(--tenant-text-secondary)'
-                                : 'var(--tenant-accent)',
-                            backgroundColor: step.isCompleted
-                              ? 'color-mix(in srgb, var(--tenant-button-primary) 12%, transparent)'
-                              : isLocked
-                                ? 'rgba(255,255,255,0.03)'
-                                : 'color-mix(in srgb, var(--tenant-accent) 10%, transparent)'
-                          }}
-                        >
-                          {step.isCompleted
-                            ? 'Completed'
-                            : isCurrent
-                              ? 'Current'
-                              : 'Open'}
-                        </span>
+
                         {step.isRequired ? (
                           <span
-                            className="rounded-full border px-2 py-1 tracking-[0.18em]"
-                            style={{ borderColor: 'var(--tenant-border)' }}
+                            className="rounded-full border px-2 py-1 tracking-[0.18em] "
+                            style={{
+                              borderColor: 'var(--tenant-border)',
+                              backgroundColor:
+                                'color-mix(in srgb, var(--tenant-bg-secondary) 50%, transparent)'
+                            }}
                           >
                             Required
                           </span>
@@ -855,7 +1226,7 @@ export function DashboardNodeStepViewer({
 
                   {isExpanded ? (
                     <div
-                      className="border-t px-4 py-4 sm:px-5"
+                      className="border-t px-8 py-4 bg-[var(--tenant-card-bg)]"
                       style={{ borderColor: 'var(--tenant-border)' }}
                     >
                       {isLocked ? (
@@ -870,19 +1241,27 @@ export function DashboardNodeStepViewer({
                         <div className="space-y-4">
                           {step.content ? (
                             <div
-                              className="text-sm leading-7 whitespace-pre-wrap"
+                              className="text-sm leading-7 whitespace-pre-wrap "
                               style={{ color: 'var(--tenant-text-main)' }}
                             >
+                              <p
+                                className="mb-2 text-[11px] uppercase tracking-[0.18em]"
+                                style={{
+                                  color: 'var(--tenant-button-primary)'
+                                }}
+                              >
+                                Content
+                              </p>
                               {step.content}
                             </div>
                           ) : null}
 
                           {step.assets.length ? (
-                            <div>
+                            <div className="bg-[var(--tenant-bg-secondary)] rounded-[var(--tenant-node-radius)] p-4">
                               <p
                                 className="mb-2 text-[11px] uppercase tracking-[0.18em]"
                                 style={{
-                                  color: 'var(--tenant-text-secondary)'
+                                  color: 'var(--tenant-button-primary)'
                                 }}
                               >
                                 Attachments
@@ -893,19 +1272,24 @@ export function DashboardNodeStepViewer({
                                     <HoverPlayCard
                                       key={asset.id}
                                       src={asset.url}
-                                      poster={assetPreviewUrl(asset) ?? undefined}
+                                      poster={
+                                        assetPreviewUrl(asset) ?? undefined
+                                      }
                                       title={asset.title}
                                       className="h-28 rounded-[18px] border-0"
-                                      onOpen={() => setSelectedAssetId(asset.id)}
+                                      onOpen={() =>
+                                        setSelectedAssetId(asset.id)
+                                      }
                                     />
                                   ) : (
                                     <button
                                       key={asset.id}
                                       type="button"
-                                      onClick={() => setSelectedAssetId(asset.id)}
-                                      className="group overflow-hidden rounded-[18px] border text-left transition hover:-translate-y-0.5"
+                                      onClick={() =>
+                                        setSelectedAssetId(asset.id)
+                                      }
+                                      className="group overflow-hidden rounded-[18px]  text-left transition hover:-translate-y-0.5"
                                       style={{
-                                        borderColor: 'var(--tenant-border)',
                                         backgroundColor:
                                           'var(--tenant-bg-secondary)'
                                       }}
@@ -918,7 +1302,8 @@ export function DashboardNodeStepViewer({
                                           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-black/30 backdrop-blur-sm"
                                           style={{
                                             borderColor: 'var(--tenant-border)',
-                                            color: 'var(--tenant-button-primary)'
+                                            color:
+                                              'var(--tenant-button-primary)'
                                           }}
                                         >
                                           <StepAssetIcon asset={asset} />
@@ -926,8 +1311,10 @@ export function DashboardNodeStepViewer({
                                         <span
                                           className="rounded-full border px-2.5 py-1 text-[11px] uppercase tracking-[0.18em]"
                                           style={{
-                                            borderColor: 'rgba(255,255,255,0.14)',
-                                            backgroundColor: 'rgba(2,6,23,0.38)',
+                                            borderColor:
+                                              'rgba(255,255,255,0.14)',
+                                            backgroundColor:
+                                              'rgba(2,6,23,0.38)',
                                             color: 'var(--tenant-text-main)'
                                           }}
                                         >
@@ -946,70 +1333,59 @@ export function DashboardNodeStepViewer({
                               className="border-t pt-4"
                               style={{ borderColor: 'var(--tenant-border)' }}
                             >
-                              <p
-                                className="text-[11px] uppercase tracking-[0.18em]"
-                                style={{
-                                  color: 'var(--tenant-text-secondary)'
-                                }}
-                              >
-                                Completion question
-                              </p>
-                              <p
-                                className="mt-3 text-sm font-medium"
-                                style={{ color: 'var(--tenant-text-main)' }}
-                              >
-                                {step.questionnaire?.prompt}
-                              </p>
-                              <div className="mt-4 space-y-2">
-                                {step.questionnaire?.options.map((option) => (
-                                  <label
-                                    key={option.id}
-                                    className="flex cursor-pointer items-center gap-3 rounded-[14px] border px-3 py-2.5 text-sm transition"
+                              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                                <div>
+                                  <p
+                                    className="text-[11px] uppercase tracking-[0.18em]"
                                     style={{
-                                      borderColor:
-                                        selectedAnswer === option.id
-                                          ? 'var(--tenant-button-primary)'
-                                          : 'var(--tenant-border)',
-                                      backgroundColor:
-                                        selectedAnswer === option.id
-                                          ? 'color-mix(in srgb, var(--tenant-button-primary) 12%, transparent)'
-                                          : 'transparent',
-                                      color: 'var(--tenant-text-main)'
+                                      color: 'var(--tenant-text-secondary)'
                                     }}
                                   >
-                                    <input
-                                      type="radio"
-                                      name={`step-question-${step.id}`}
-                                      checked={selectedAnswer === option.id}
-                                      onChange={() =>
-                                        setSelectedAnswers((current) => ({
-                                          ...current,
-                                          [step.id]: option.id
-                                        }))
-                                      }
-                                    />
-                                    <span>{option.label}</span>
-                                  </label>
-                                ))}
+                                    Step test
+                                  </p>
+                                  <p
+                                    className="mt-2 text-sm"
+                                    style={{ color: 'var(--tenant-text-main)' }}
+                                  >
+                                    {questionCount} question
+                                    {questionCount === 1 ? '' : 's'} in this
+                                    test.
+                                  </p>
+                                  <p
+                                    className="mt-1 text-sm"
+                                    style={{
+                                      color: 'var(--tenant-text-secondary)'
+                                    }}
+                                  >
+                                    Pass with{' '}
+                                    {step.questionnaire?.passingScore ??
+                                      questionCount}{' '}
+                                    correct answer
+                                    {(step.questionnaire?.passingScore ??
+                                      questionCount) === 1
+                                      ? ''
+                                      : 's'}
+                                    .
+                                  </p>
+                                </div>
+                                <Button
+                                  className="h-10 rounded-xl px-4 text-sm font-semibold disabled:opacity-50"
+                                  style={{
+                                    backgroundColor:
+                                      'var(--tenant-button-primary)',
+                                    color: 'var(--tenant-button-text)'
+                                  }}
+                                  disabled={
+                                    isStepBusy ||
+                                    sessionStatus !== 'authenticated'
+                                  }
+                                  onClick={() => openTest(step)}
+                                >
+                                  {questionnaireAttempt
+                                    ? 'Retake test'
+                                    : 'Take test'}
+                                </Button>
                               </div>
-                              <Button
-                                className="mt-4 h-10 rounded-xl px-4 text-sm font-semibold disabled:opacity-50"
-                                style={{
-                                  backgroundColor:
-                                    'var(--tenant-button-primary)',
-                                  color: 'var(--tenant-button-text)'
-                                }}
-                                disabled={!selectedAnswer || isStepBusy}
-                                onClick={() =>
-                                  questionnaireMutation.mutate({
-                                    productId,
-                                    stepId: step.id,
-                                    answerId: selectedAnswer
-                                  })
-                                }
-                              >
-                                Submit answer
-                              </Button>
                             </div>
                           ) : null}
 
@@ -1050,13 +1426,34 @@ export function DashboardNodeStepViewer({
                           ) : null}
 
                           {!step.isCompleted && hasQuestionnaire ? (
-                            <p
-                              className="text-sm leading-6"
-                              style={{ color: 'var(--tenant-text-secondary)' }}
-                            >
-                              Answer the checkpoint question to finish this step
-                              and unlock the next one.
-                            </p>
+                            <div className="space-y-2">
+                              <p
+                                className="text-sm leading-6"
+                                style={{
+                                  color: 'var(--tenant-text-secondary)'
+                                }}
+                              >
+                                Take the test to finish this step and unlock the
+                                next one.
+                              </p>
+                              {questionnaireAttempt ? (
+                                <p
+                                  className="text-sm"
+                                  style={{
+                                    color: questionnaireAttempt.passed
+                                      ? 'var(--tenant-button-primary)'
+                                      : '#fca5a5'
+                                  }}
+                                >
+                                  Last result:{' '}
+                                  {questionnaireAttempt.passed
+                                    ? 'passed'
+                                    : 'failed'}{' '}
+                                  ({questionnaireAttempt.correctCount}/
+                                  {questionnaireAttempt.totalQuestions})
+                                </p>
+                              ) : null}
+                            </div>
                           ) : null}
 
                           {sessionStatus !== 'authenticated' ? (
@@ -1091,6 +1488,21 @@ export function DashboardNodeStepViewer({
         <StepAssetModal
           asset={selectedAsset}
           onClose={() => setSelectedAssetId('')}
+        />
+      ) : null}
+      {activeTestStep ? (
+        <StepTestModal
+          key={activeTestStep.id}
+          step={activeTestStep}
+          answers={testAnswersByStepId[activeTestStep.id] ?? {}}
+          result={testResultsByStepId[activeTestStep.id] ?? null}
+          isPending={questionnaireMutation.isPending}
+          onAnswerChange={(questionId, answerId) =>
+            updateTestAnswer(activeTestStep.id, questionId, answerId)
+          }
+          onClose={() => setActiveTestStepId('')}
+          onRetry={() => retryTest(activeTestStep)}
+          onSubmit={() => submitTest(activeTestStep)}
         />
       ) : null}
     </section>

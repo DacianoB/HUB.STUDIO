@@ -15,20 +15,9 @@ import {
   ensureTenantPolicy,
   tenantPolicySelect,
 } from "~/server/tenant-policy";
+import { readStepQuestionnaire, type StepQuestionnaire } from "~/lib/step-questionnaire";
 
 const moduleTypeSchema = z.enum(["LIBRARY", "COURSE"]);
-
-type StepQuestionnaireOption = {
-  id: string;
-  label: string;
-};
-
-type StepQuestionnaire = {
-  prompt: string;
-  options: StepQuestionnaireOption[];
-  correctOptionId?: string;
-  successMessage?: string;
-};
 
 type StepMetadata = {
   coverImageUrl?: string;
@@ -108,6 +97,21 @@ function normalizeSystemTag(value: unknown) {
   return `#tag ${normalized}`;
 }
 
+function normalizeLibraryItemTag(value: unknown) {
+  if (typeof value !== "string") return null;
+
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^#+/, "")
+    .replace(/[^\p{L}\p{N}_-]+/gu, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!normalized) return null;
+  return `#${normalized}`;
+}
+
 function readLibrarySystemTags(settings: unknown) {
   const raw = normalizeModuleSettings(settings).systemTags;
   if (!Array.isArray(raw)) return [] as string[];
@@ -123,6 +127,67 @@ function readLibrarySystemTags(settings: unknown) {
   }
 
   return tags;
+}
+
+function readLibraryItemTags(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return [] as string[];
+
+  const raw = (metadata as Record<string, unknown>).tags;
+  if (!Array.isArray(raw)) return [] as string[];
+
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  for (const value of raw) {
+    const normalized = normalizeLibraryItemTag(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    tags.push(normalized);
+  }
+
+  return tags;
+}
+
+function readLibraryItemWeight(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return 0;
+
+  const raw = (metadata as Record<string, unknown>).weight;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function sortLibraryAssets<
+  T extends {
+    stepId?: string | null;
+    moduleType?: string | null;
+    placement?: string | null;
+    metadata?: unknown;
+    sortOrder?: number | null;
+    createdAt?: Date | null;
+  },
+>(assets: T[]) {
+  return [...assets].sort((left, right) => {
+    const leftIsLibrary = isLibraryAsset(left);
+    const rightIsLibrary = isLibraryAsset(right);
+
+    if (leftIsLibrary && rightIsLibrary) {
+      const weightDelta =
+        readLibraryItemWeight(right.metadata) - readLibraryItemWeight(left.metadata);
+      if (weightDelta !== 0) return weightDelta;
+    }
+
+    const sortOrderDelta = (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+    if (sortOrderDelta !== 0) return sortOrderDelta;
+
+    return (left.createdAt?.getTime() ?? 0) - (right.createdAt?.getTime() ?? 0);
+  });
 }
 
 function normalizeTenantModuleSettings(
@@ -157,10 +222,13 @@ function attachLibrarySystemTags<
     stepId?: string | null;
     moduleType?: string | null;
     placement?: string | null;
+    metadata?: unknown;
   },
 >(asset: T, systemTags: string[]) {
   return {
     ...asset,
+    tags: isLibraryAsset(asset) ? readLibraryItemTags(asset.metadata) : [],
+    weight: isLibraryAsset(asset) ? readLibraryItemWeight(asset.metadata) : 0,
     systemTags: isLibraryAsset(asset) ? systemTags : [],
   };
 }
@@ -217,46 +285,6 @@ function readStepMetadata(metadata: unknown): StepMetadata {
   }
 
   const candidate = metadata as Record<string, unknown>;
-  const rawQuestionnaire =
-    candidate.questionnaire && typeof candidate.questionnaire === "object"
-      ? (candidate.questionnaire as Record<string, unknown>)
-      : null;
-  const rawOptions = Array.isArray(rawQuestionnaire?.options)
-    ? rawQuestionnaire.options
-    : [];
-  const options = rawOptions
-    .filter(
-      (option): option is Record<string, unknown> =>
-        Boolean(option) && typeof option === "object",
-    )
-    .map((option, index) => ({
-      id:
-        typeof option.id === "string" && option.id.trim()
-          ? option.id.trim()
-          : `option-${index + 1}`,
-      label: typeof option.label === "string" ? option.label.trim() : "",
-    }))
-    .filter((option) => option.label.length > 0);
-
-  const questionnaire =
-    rawQuestionnaire &&
-    typeof rawQuestionnaire.prompt === "string" &&
-    rawQuestionnaire.prompt.trim() &&
-    options.length >= 2
-      ? {
-          prompt: rawQuestionnaire.prompt.trim(),
-          options,
-          correctOptionId:
-            typeof rawQuestionnaire.correctOptionId === "string"
-              ? rawQuestionnaire.correctOptionId
-              : undefined,
-          successMessage:
-            typeof rawQuestionnaire.successMessage === "string" &&
-            rawQuestionnaire.successMessage.trim()
-              ? rawQuestionnaire.successMessage.trim()
-              : undefined,
-        }
-      : undefined;
 
   return {
     coverImageUrl:
@@ -264,7 +292,7 @@ function readStepMetadata(metadata: unknown): StepMetadata {
         ? candidate.coverImageUrl
         : undefined,
     content: typeof candidate.content === "string" ? candidate.content : undefined,
-    questionnaire,
+    questionnaire: readStepQuestionnaire(candidate.questionnaire),
   };
 }
 
@@ -281,13 +309,14 @@ async function readTenantEnabledModules(
   const tenantModules = await db.tenantModuleCapability.findMany({
     where: { tenantId },
   });
-  if (!tenantModules.length) {
-    return new Set(defaultModuleCatalog.map((entry) => entry.moduleType));
-  }
+  const configuredByType = new Map(
+    tenantModules.map((entry) => [entry.moduleType, entry.isEnabled] as const),
+  );
+
   return new Set(
-    tenantModules
-      .filter((entry: { isEnabled: boolean }) => entry.isEnabled)
-      .map((entry: { moduleType: "LIBRARY" | "COURSE" }) => entry.moduleType),
+    defaultModuleCatalog
+      .filter((entry) => configuredByType.get(entry.moduleType) ?? true)
+      .map((entry) => entry.moduleType),
   );
 }
 
@@ -449,7 +478,9 @@ export const productsRouter = createTRPCRouter({
       }
       return {
         ...product,
-        assets: product.assets.map((asset) => attachLibrarySystemTags(asset, librarySystemTags)),
+        assets: sortLibraryAssets(product.assets).map((asset) =>
+          attachLibrarySystemTags(asset, librarySystemTags),
+        ),
       };
     }),
 
@@ -472,7 +503,7 @@ export const productsRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
       }
 
-      return product.assets
+      return sortLibraryAssets(product.assets)
         .filter((asset) => isLibraryAsset(asset))
         .map((asset) => attachLibrarySystemTags(asset, librarySystemTags));
     }),

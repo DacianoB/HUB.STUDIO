@@ -73,6 +73,7 @@ type LibraryAssetSnapshot = {
   title: string;
   url: string;
   type: string;
+  tags?: string[];
   targetUrl?: string | null;
   openInNewTab?: boolean | null;
   previewUrl?: string | null;
@@ -265,6 +266,11 @@ function readLibraryAssets(
       title: String(asset.title ?? ""),
       url: String(asset.url ?? ""),
       type: String(asset.type ?? "FILE"),
+      tags: Array.isArray(asset.tags)
+        ? asset.tags.filter(
+            (tag): tag is string => typeof tag === "string" && Boolean(tag.trim())
+          )
+        : [],
       targetUrl: typeof asset.targetUrl === "string" ? asset.targetUrl : null,
       openInNewTab: typeof asset.openInNewTab === "boolean" ? asset.openInNewTab : null,
       previewUrl:
@@ -753,6 +759,11 @@ export function PagesDashboard() {
           title: String(asset.title ?? ""),
           url: String(asset.url ?? ""),
           type: String(asset.type ?? "FILE"),
+          tags: Array.isArray(asset.tags)
+            ? asset.tags.filter(
+                (tag): tag is string => typeof tag === "string" && Boolean(tag.trim())
+              )
+            : [],
           targetUrl:
             typeof asset.targetUrl === "string" ? asset.targetUrl : null,
           openInNewTab:
@@ -1129,22 +1140,22 @@ export function PagesDashboard() {
               key={page.id}
               type="button"
               onClick={() => selectPage(page.id)}
-              className={`min-h-[72px] rounded-2xl border px-3 py-3 text-left transition ${
+              className={`min-h-[72px] rounded-[10px] border px-3 py-3 text-left transition ${
                 isActive
-                  ? "border-white bg-zinc-100 text-black"
-                  : "border-white/80 bg-transparent text-white hover:bg-white/5"
+                  ? "border-[#4b412f] bg-[#241f18] text-[#f4efe5]"
+                  : "border-[#37332d] bg-transparent text-[#f4efe5] hover:bg-[#1d1b17]"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <p className="truncate font-mono text-[12px] font-semibold uppercase tracking-[0.14em]">
+                <p className="truncate text-sm font-semibold">
                   {page.name}
                 </p>
                 {isUserLocked ? (
                   <span
-                    className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                    className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold ${
                       isActive
-                        ? "bg-black/10 text-black/75"
-                        : "border border-white/10 bg-white/5 text-zinc-300"
+                        ? "border border-[#4b412f] bg-[#1a1814] text-[#d7c29f]"
+                        : "border border-[#37332d] bg-[#1b1916] text-[#c1b9ab]"
                     }`}
                   >
                     <Lock className="h-3 w-3" />
@@ -1154,7 +1165,7 @@ export function PagesDashboard() {
               </div>
               <p
                 className={`mt-2 truncate text-[11px] ${
-                  isActive ? "text-black/70" : "text-zinc-400"
+                  isActive ? "text-[#cdb694]" : "text-[#9f9789]"
                 }`}
               >
                 {slugPath(page.slug)}
@@ -1167,7 +1178,7 @@ export function PagesDashboard() {
           type="button"
           onClick={() => void createPage(addParentId ?? undefined)}
           disabled={pageLimitReached}
-          className="flex h-[52px] w-[52px] items-center justify-center rounded-2xl border border-white/80 bg-transparent text-white transition hover:bg-white/5"
+          className="flex h-[52px] w-[52px] items-center justify-center rounded-[10px] border border-[#37332d] bg-transparent text-[#f4efe5] transition hover:bg-[#1d1b17]"
           aria-label={addLabel}
           title={addLabel}
         >
@@ -1219,7 +1230,7 @@ export function PagesDashboard() {
             type="button"
             onClick={() => void createPage(fromPageId)}
             disabled={pageLimitReached}
-            className="flex h-[44px] w-[44px] items-center justify-center rounded-2xl border border-white/80 bg-transparent text-white transition hover:bg-white/5"
+            className="flex h-[44px] w-[44px] items-center justify-center rounded-[10px] border border-[#37332d] bg-transparent text-[#f4efe5] transition hover:bg-[#1d1b17]"
             aria-label="Add child page"
             title="Add child page"
           >
@@ -1233,7 +1244,7 @@ export function PagesDashboard() {
   function renderHierarchyNavigator() {
     if (!pages.length) {
       return (
-        <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-zinc-500">
+        <div className="rounded-[10px] border border-dashed border-[#302d28] bg-[#151411] p-4 text-sm text-[#7f786b]">
           No pages yet.
         </div>
       );
@@ -1243,10 +1254,10 @@ export function PagesDashboard() {
       return (
         <div className="space-y-4">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+            <p className="font-mono text-xs font-medium text-[#9f9789]">
               Root navigation
             </p>
-            <p className="mt-2 text-sm text-zinc-400">
+            <p className="mt-2 text-sm text-[#9f9789]">
               Pick a page to edit it, or add a new root page on the same row.
             </p>
           </div>
@@ -1259,7 +1270,7 @@ export function PagesDashboard() {
       <div className="space-y-5">
         {selectedParent ? (
           <div className="space-y-2">
-            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+            <p className="font-mono text-xs font-medium text-[#9f9789]">
               Parent level
             </p>
             {renderPageRow(
@@ -1273,7 +1284,7 @@ export function PagesDashboard() {
         ) : null}
 
         <div className="space-y-2">
-          <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-zinc-500">
+          <p className="font-mono text-xs font-medium text-[#9f9789]">
             Current level
           </p>
           {renderPageRow(
@@ -1294,10 +1305,10 @@ export function PagesDashboard() {
   return (
     <AdminShell
       title="Pages"
-      description="Create tenant pages, manage hierarchy, and edit the nodes that live inside each page."
+      description="Manage page hierarchy and edit the nodes inside each tenant page."
       actions={
         <Button
-          className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400"
+          className="h-11 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660]"
           disabled={pageLimitReached}
           onClick={() => void createPage()}
         >
@@ -1308,36 +1319,36 @@ export function PagesDashboard() {
     >
       <div className="space-y-4">
         {pageLimitReached ? (
-          <div className="rounded-3xl border border-amber-400/20 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+          <div className="rounded-[12px] border border-[#51422b] bg-[#2a2114] px-5 py-4 text-sm text-[#dfc28e]">
             This tenant is at its configured page limit. Remove an existing custom page or ask a
             global admin to raise the cap.
           </div>
         ) : null}
-        <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+        <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
           <div className="mb-4 flex items-center gap-2">
-            <Waypoints className="h-4 w-4 text-sky-300" />
-            <h2 className="text-lg font-semibold text-white">Page hierarchy</h2>
+            <Waypoints className="h-4 w-4 text-[#d7c29f]" />
+            <h2 className="text-lg font-semibold text-[#f4efe5]">Page hierarchy</h2>
           </div>
-          <p className="mb-5 text-sm text-zinc-400">
-            This now mirrors the original platform navigator: siblings stay on one row, and child creation hangs directly below the selected page.
+          <p className="mb-5 text-sm text-[#9f9789]">
+            Select a page, move through siblings on the same level, and add children directly from the current branch.
           </p>
           {renderHierarchyNavigator()}
         </div>
 
         {selectedPage ? (
           <>
-            <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+            <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                   <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                    <p className="text-xs font-medium text-[#9f9789]">
                       Page editor
                     </p>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <h2 className="text-xl font-semibold text-white">
+                      <h2 className="text-xl font-semibold text-[#f4efe5]">
                         {selectedPage.name}
                       </h2>
                       {!readEditableByUser(selectedPage) ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300">
+                        <span className="inline-flex items-center gap-1 rounded-md border border-[#37332d] bg-[#1b1916] px-2.5 py-1 text-[10px] font-semibold text-[#c1b9ab]">
                           <Lock className="h-3 w-3" />
                           Locked for users
                         </span>
@@ -1347,14 +1358,14 @@ export function PagesDashboard() {
                   <div className="flex gap-2">
                     <Link
                       href={slugPath(selectedPage.slug) as any}
-                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-4 text-sm text-zinc-200 hover:bg-white/5"
+                      className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-4 text-sm text-[#e5dccf] hover:bg-[#1d1b17]"
                     >
                       Open page
                       <ArrowUpRight className="h-4 w-4" />
                     </Link>
                     {!selectedPage.isSystem ? (
                       <Button
-                        className="h-10 rounded-xl border-red-500/30 bg-red-500/80 px-4 text-sm font-semibold text-black hover:bg-red-400 disabled:opacity-50"
+                        className="h-10 rounded-[10px] border border-[#553531] bg-[#4a2b28] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#5a3330] disabled:opacity-50"
                         disabled={removePageMutation.isPending}
                         onClick={() =>
                           removePageMutation.mutate({ pageId: selectedPage.id })
@@ -1370,19 +1381,19 @@ export function PagesDashboard() {
                 <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_0.85fr]">
                   <div className="space-y-3">
                     <input
-                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                      className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                       value={pageName}
                       onChange={(event) => setPageName(event.target.value)}
                       placeholder="Page name"
                     />
                     <textarea
-                      className="h-24 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                      className="h-24 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                       value={pageDescription}
                       onChange={(event) => setPageDescription(event.target.value)}
                       placeholder="Page description"
                     />
                     <select
-                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                      className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                       value={selectedParentPageId}
                       onChange={(event) => setSelectedParentPageId(event.target.value)}
                       disabled={selectedPage.isSystem}
@@ -1396,7 +1407,7 @@ export function PagesDashboard() {
                           </option>
                         ))}
                     </select>
-                    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                    <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                       <input
                         type="checkbox"
                         checked={pageEditableByUser}
@@ -1409,7 +1420,7 @@ export function PagesDashboard() {
                     </label>
                     {!selectedPage.isSystem ? (
                       <Button
-                        className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
+                        className="h-11 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                         disabled={!pageName.trim() || upsertPageMutation.isPending}
                         onClick={() =>
                           upsertPageMutation.mutate({
@@ -1430,21 +1441,21 @@ export function PagesDashboard() {
                         Save page settings
                       </Button>
                     ) : (
-                      <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-500">
+                      <div className="rounded-[10px] border border-[#302d28] bg-[#151411] px-4 py-3 text-sm text-[#7f786b]">
                         System pages cannot be edited here.
                       </div>
                     )}
                   </div>
 
                   <div className="space-y-4">
-                    <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
-                      <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                    <div className="rounded-[12px] border border-[#302d28] bg-[#151411] p-4">
+                      <p className="text-xs font-medium text-[#9f9789]">
                         Current route
                       </p>
-                      <p className="mt-2 text-lg font-semibold text-white">
+                      <p className="mt-2 text-lg font-semibold text-[#f4efe5]">
                         {slugPath(selectedPage.slug)}
                       </p>
-                      <p className="mt-2 text-sm text-zinc-400">
+                      <p className="mt-2 text-sm text-[#9f9789]">
                         Parent:{" "}
                         {selectedPage.parentPageId
                           ? pages.find((page) => page.id === selectedPage.parentPageId)?.name ??
@@ -1453,8 +1464,8 @@ export function PagesDashboard() {
                       </p>
                     </div>
 
-                    <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
-                      <p className="text-sm font-semibold text-white">Child pages</p>
+                    <div className="rounded-[12px] border border-[#302d28] bg-[#151411] p-4">
+                      <p className="text-sm font-semibold text-[#f4efe5]">Child pages</p>
                       <div className="mt-3 space-y-2">
                         {pages
                           .filter((page) => page.parentPageId === selectedPage.id)
@@ -1463,13 +1474,13 @@ export function PagesDashboard() {
                               key={page.id}
                               type="button"
                               onClick={() => selectPage(page.id)}
-                              className="w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-left text-sm text-zinc-300 hover:bg-white/5"
+                              className="w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-left text-sm text-[#c1b9ab] hover:bg-[#1d1b17]"
                             >
                               {page.name}
                             </button>
                           ))}
                         <Button
-                          className="h-10 w-full rounded-xl border-sky-500/30 bg-sky-500 text-sm font-semibold text-black hover:bg-sky-400"
+                          className="h-10 w-full rounded-[10px] border border-[#4b412f] bg-[#8d7a56] text-sm font-semibold text-[#15130f] hover:bg-[#9a8660]"
                           onClick={() => void createPage(selectedPage.id)}
                         >
                           <Plus className="mr-2 h-4 w-4" />
@@ -1481,23 +1492,23 @@ export function PagesDashboard() {
                 </div>
               </div>
 
-              <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-                <div className="space-y-4">
-                  <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,_0.9fr)_minmax(0,_1.1fr)]">
+                <div className="min-w-0 space-y-4">
+                  <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                     <div className="mb-4 flex items-center gap-2">
-                      <Package2 className="h-4 w-4 text-amber-300" />
-                      <h2 className="text-lg font-semibold text-white">
+                      <Package2 className="h-4 w-4 text-[#d7c29f]" />
+                      <h2 className="text-lg font-semibold text-[#f4efe5]">
                         Node library
                       </h2>
                     </div>
 
                     <div className="space-y-4">
-                      <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
-                        <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      <div className="space-y-3 rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                        <p className="text-xs font-medium text-[#9f9789]">
                           Quick add
                         </p>
                         <select
-                          className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                          className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                           value={selectedProductForNode}
                           onChange={(event) => {
                             setSelectedProductForNode(event.target.value);
@@ -1513,7 +1524,7 @@ export function PagesDashboard() {
                         </select>
                         <div className="grid gap-2">
                           <Button
-                            className="h-11 rounded-xl border-violet-500/30 bg-violet-500 px-4 text-sm font-semibold text-black hover:bg-violet-400 disabled:opacity-50"
+                            className="h-11 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                             disabled={!selectedProductForNode || addNodeMutation.isPending}
                             onClick={() =>
                               addNodeMutation.mutate({
@@ -1542,7 +1553,7 @@ export function PagesDashboard() {
                             Add library view
                           </Button>
                           <Button
-                            className="h-11 rounded-xl border-sky-500/30 bg-sky-500 px-4 text-sm font-semibold text-black hover:bg-sky-400 disabled:opacity-50"
+                            className="h-11 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                             disabled={addNodeMutation.isPending}
                             onClick={() =>
                               addNodeMutation.mutate({
@@ -1573,15 +1584,15 @@ export function PagesDashboard() {
                         </div>
                       </div>
 
-                      <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="space-y-3 rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
                         <div className="flex items-center gap-2">
-                          <Search className="h-4 w-4 text-zinc-500" />
-                          <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                          <Search className="h-4 w-4 text-[#7f786b]" />
+                          <p className="text-xs font-medium text-[#9f9789]">
                             Search `_nodes`
                           </p>
                         </div>
                         <input
-                          className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                          className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                           placeholder="Search nodes by name, type, or tag"
                           value={nodeSearch}
                           onChange={(event) => setNodeSearch(event.target.value)}
@@ -1592,28 +1603,28 @@ export function PagesDashboard() {
                               key={key}
                               type="button"
                               onClick={() => void addCatalogNode(key, config)}
-                              className="rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-left transition hover:border-sky-400/40 hover:bg-white/5"
+                              className="rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-left transition hover:border-[#4b412f] hover:bg-[#1d1b17]"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-white">
+                                  <p className="truncate text-sm font-semibold text-[#f4efe5]">
                                     {config.name ?? titleFromType(key)}
                                   </p>
-                                  <p className="mt-1 truncate text-[11px] text-zinc-500">
+                                  <p className="mt-1 truncate text-[11px] text-[#7f786b]">
                                     {key}
                                   </p>
                                 </div>
-                                <span className="rounded-lg border border-white/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-300">
+                                <span className="rounded-[8px] border border-[#37332d] px-2 py-1 text-[10px] font-semibold text-[#c1b9ab]">
                                   Add
                                 </span>
                               </div>
-                              <p className="mt-2 text-xs text-zinc-400">
+                              <p className="mt-2 text-xs text-[#9f9789]">
                                 {config.description ?? "Drop this node into the page grid."}
                               </p>
                             </button>
                           ))}
                           {!filteredNodeCatalogEntries.length ? (
-                            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-500">
+                            <div className="rounded-[10px] border border-dashed border-[#302d28] bg-[#151411] px-4 py-3 text-sm text-[#7f786b]">
                               No matching nodes found.
                             </div>
                           ) : null}
@@ -1622,32 +1633,32 @@ export function PagesDashboard() {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
-                    <h2 className="text-lg font-semibold text-white">Node editor</h2>
+                  <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
+                    <h2 className="text-lg font-semibold text-[#f4efe5]">Node editor</h2>
                     <div className="mt-4 space-y-3">
                       {selectedNode ? (
                         <>
-                          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                            <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                          <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                            <p className="text-xs font-medium text-[#9f9789]">
                               Selected node
                             </p>
-                            <p className="mt-2 text-lg font-semibold text-white">
+                            <p className="mt-2 text-lg font-semibold text-[#f4efe5]">
                               {selectedNode.nodeKey}
                             </p>
-                            <p className="mt-1 text-sm text-zinc-400">
+                            <p className="mt-1 text-sm text-[#9f9789]">
                               {selectedNode.type}
                             </p>
                           </div>
 
                           <input
-                            className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                            className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                             placeholder="Node title"
                             value={nodeTitle}
                             onChange={(event) => setNodeTitle(event.target.value)}
                           />
 
                           <input
-                            className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                            className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                             placeholder="Sort order"
                             value={nodeSortOrder}
                             onChange={(event) => setNodeSortOrder(event.target.value)}
@@ -1656,7 +1667,7 @@ export function PagesDashboard() {
                           {selectedNode.type === "node-product" ? (
                             <>
                               <select
-                                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                 value={selectedProductForNode}
                                 onChange={(event) => {
                                   setSelectedProductForNode(event.target.value);
@@ -1671,14 +1682,14 @@ export function PagesDashboard() {
                                 ))}
                               </select>
 
-                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                                <p className="text-xs font-medium text-[#9f9789]">
                                   Product preview
                                 </p>
-                                <p className="mt-2 text-lg font-semibold text-white">
+                                <p className="mt-2 text-lg font-semibold text-[#f4efe5]">
                                   {selectedProductPreview?.name ?? "Select a product"}
                                 </p>
-                                <p className="mt-1 text-sm text-zinc-400">
+                                <p className="mt-1 text-sm text-[#9f9789]">
                                   {selectedProductPreview?.description ??
                                     "This node will render the selected product card inside the page."}
                                 </p>
@@ -1689,7 +1700,7 @@ export function PagesDashboard() {
                           {selectedNode.type === "node-course-step" ? (
                             <>
                               <select
-                                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                 value={selectedProductForNode}
                                 onChange={(event) => {
                                   setSelectedProductForNode(event.target.value);
@@ -1705,7 +1716,7 @@ export function PagesDashboard() {
                               </select>
 
                               <select
-                                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                 value={selectedStepForNode}
                                 onChange={(event) => setSelectedStepForNode(event.target.value)}
                               >
@@ -1717,14 +1728,14 @@ export function PagesDashboard() {
                                 ))}
                               </select>
 
-                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                                <p className="text-xs font-medium text-[#9f9789]">
                                   Step preview
                                 </p>
-                                <p className="mt-2 text-lg font-semibold text-white">
+                                <p className="mt-2 text-lg font-semibold text-[#f4efe5]">
                                   {selectedStepPreview?.title ?? "Select a course step"}
                                 </p>
-                                <p className="mt-1 text-sm text-zinc-400">
+                                <p className="mt-1 text-sm text-[#9f9789]">
                                   {selectedStepPreview?.description ??
                                     "This node will render the selected course step inside the page."}
                                 </p>
@@ -1735,7 +1746,7 @@ export function PagesDashboard() {
                           {isStepViewerNodeType(selectedNode.type) ? (
                             <>
                               <select
-                                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                 value={selectedProductForNode}
                                 onChange={(event) => {
                                   setSelectedProductForNode(event.target.value);
@@ -1750,14 +1761,14 @@ export function PagesDashboard() {
                                 ))}
                               </select>
 
-                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                                <p className="text-xs font-medium text-[#9f9789]">
                                   Step viewer product
                                 </p>
-                                <p className="mt-2 text-lg font-semibold text-white">
+                                <p className="mt-2 text-lg font-semibold text-[#f4efe5]">
                                   {selectedProductPreview?.name ?? "Select a product"}
                                 </p>
-                                <p className="mt-1 text-sm text-zinc-400">
+                                <p className="mt-1 text-sm text-[#9f9789]">
                                   This node renders the selected product&apos;s course step flow.
                                 </p>
                               </div>
@@ -1767,7 +1778,7 @@ export function PagesDashboard() {
                           {isLibraryViewNodeType(selectedNode.type) ? (
                             <>
                               <select
-                                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                 value={selectedProductForNode}
                                 onChange={(event) => setSelectedProductForNode(event.target.value)}
                               >
@@ -1779,17 +1790,17 @@ export function PagesDashboard() {
                                 ))}
                               </select>
 
-                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                                <p className="text-xs font-medium text-[#9f9789]">
                                   Item grid config
                                 </p>
                                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                                   <div>
-                                    <p className="mb-2 text-xs text-zinc-400">
+                                    <p className="mb-2 text-xs text-[#9f9789]">
                                       Width options
                                     </p>
                                     <input
-                                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 font-mono text-sm text-white outline-none transition focus:border-sky-400/50"
+                                      className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 font-mono text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                       value={libraryWidthOptionsText}
                                       onChange={(event) =>
                                         setLibraryWidthOptionsText(event.target.value)
@@ -1798,11 +1809,11 @@ export function PagesDashboard() {
                                     />
                                   </div>
                                   <div>
-                                    <p className="mb-2 text-xs text-zinc-400">
+                                    <p className="mb-2 text-xs text-[#9f9789]">
                                       Height options
                                     </p>
                                     <input
-                                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 font-mono text-sm text-white outline-none transition focus:border-sky-400/50"
+                                      className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 font-mono text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                       value={libraryHeightOptionsText}
                                       onChange={(event) =>
                                         setLibraryHeightOptionsText(event.target.value)
@@ -1811,11 +1822,11 @@ export function PagesDashboard() {
                                     />
                                   </div>
                                 </div>
-                                <p className="mt-3 text-xs text-zinc-400">
+                                <p className="mt-3 text-xs text-[#9f9789]">
                                   Use comma-separated values like `w: [1]` and `h: [6,8,10]`.
                                   Each library item is randomized using these exact size options.
                                 </p>
-                                <label className="mt-4 flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                                <label className="mt-4 flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                                   <input
                                     type="checkbox"
                                     checked={libraryViewInGallery}
@@ -1829,7 +1840,7 @@ export function PagesDashboard() {
                                   />
                                   Open selected item inside the gallery
                                 </label>
-                                <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                                <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                                   <input
                                     type="checkbox"
                                     checked={libraryOpenInModal}
@@ -1845,14 +1856,14 @@ export function PagesDashboard() {
                                 </label>
                               </div>
 
-                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                                <p className="text-xs font-medium text-[#9f9789]">
                                   Library preview
                                 </p>
-                                <p className="mt-2 text-lg font-semibold text-white">
+                                <p className="mt-2 text-lg font-semibold text-[#f4efe5]">
                                   {selectedProductPreview?.name ?? "Select a product"}
                                 </p>
-                                <p className="mt-1 text-sm text-zinc-400">
+                                <p className="mt-1 text-sm text-[#9f9789]">
                                   This node renders the selected product library as real page-grid
                                   items. Gallery mode keeps the selected asset in the same page,
                                   while modal mode opens the asset in an overlay like the step
@@ -1864,38 +1875,38 @@ export function PagesDashboard() {
 
                           {isTextNodeType(selectedNode.type) ? (
                             <>
-                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                                <p className="text-xs font-medium text-[#9f9789]">
                                   Text content
                                 </p>
                                 <div className="mt-3 grid gap-3">
                                   <input
-                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeTitle}
                                     onChange={(event) => setTextNodeTitle(event.target.value)}
                                     placeholder="Title"
                                   />
                                   <textarea
-                                    className="h-24 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-24 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeSubtitle}
                                     onChange={(event) => setTextNodeSubtitle(event.target.value)}
                                     placeholder="Subtitle"
                                   />
                                 </div>
-                                <p className="mt-3 text-xs text-zinc-400">
+                                <p className="mt-3 text-xs text-[#9f9789]">
                                   Use <code>{"{{value}}"}</code> in either field to inject the
                                   selected variable. Without the token, the chosen target field is
                                   replaced by the variable value.
                                 </p>
                               </div>
 
-                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                                <p className="text-xs font-medium text-[#9f9789]">
                                   Variable
                                 </p>
                                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                                   <select
-                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeVariableSource}
                                     onChange={(event) =>
                                       setTextNodeVariableSource(
@@ -1908,7 +1919,7 @@ export function PagesDashboard() {
                                     <option value="company_name">Company name</option>
                                   </select>
                                   <select
-                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeVariableTarget}
                                     onChange={(event) =>
                                       setTextNodeVariableTarget(
@@ -1923,7 +1934,7 @@ export function PagesDashboard() {
                                   </select>
                                   {textNodeVariableSource === "product_name" ? (
                                     <select
-                                      className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50 sm:col-span-2"
+                                      className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56] sm:col-span-2"
                                       value={selectedProductForNode}
                                       onChange={(event) =>
                                         setSelectedProductForNode(event.target.value)
@@ -1937,7 +1948,7 @@ export function PagesDashboard() {
                                       ))}
                                     </select>
                                   ) : (
-                                    <div className="flex h-11 items-center rounded-xl border border-white/10 bg-black/20 px-3 text-xs text-zinc-400 sm:col-span-2">
+                                    <div className="flex h-11 items-center rounded-[10px] border border-[#302d28] bg-[#151411] px-3 text-xs text-[#9f9789] sm:col-span-2">
                                       {textNodeVariableSource === "company_name"
                                         ? "Uses the current tenant/company name."
                                         : "No variable linked."}
@@ -1946,13 +1957,13 @@ export function PagesDashboard() {
                                 </div>
                               </div>
 
-                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                                <p className="text-xs font-medium text-[#9f9789]">
                                   Style
                                 </p>
                                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                                   <input
-                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeTitleFontSize}
                                     onChange={(event) =>
                                       setTextNodeTitleFontSize(event.target.value)
@@ -1960,7 +1971,7 @@ export function PagesDashboard() {
                                     placeholder="Title size"
                                   />
                                   <select
-                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeTitleFontWeight}
                                     onChange={(event) =>
                                       setTextNodeTitleFontWeight(event.target.value)
@@ -1973,7 +1984,7 @@ export function PagesDashboard() {
                                     <option value="800">Extra bold</option>
                                   </select>
                                   <input
-                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeSubtitleFontSize}
                                     onChange={(event) =>
                                       setTextNodeSubtitleFontSize(event.target.value)
@@ -1981,7 +1992,7 @@ export function PagesDashboard() {
                                     placeholder="Subtitle size"
                                   />
                                   <select
-                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeSubtitleFontWeight}
                                     onChange={(event) =>
                                       setTextNodeSubtitleFontWeight(event.target.value)
@@ -1993,7 +2004,7 @@ export function PagesDashboard() {
                                     <option value="700">Bold</option>
                                   </select>
                                   <select
-                                    className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                    className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                     value={textNodeTextAlign}
                                     onChange={(event) =>
                                       setTextNodeTextAlign(event.target.value as TextAlign)
@@ -2003,29 +2014,29 @@ export function PagesDashboard() {
                                     <option value="center">Align center</option>
                                     <option value="right">Align right</option>
                                   </select>
-                                  <div className="flex h-11 items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3">
+                                  <div className="flex h-11 items-center gap-3 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3">
                                     <input
                                       type="color"
                                       value={textNodeTitleColor}
                                       onChange={(event) =>
                                         setTextNodeTitleColor(event.target.value)
                                       }
-                                      className="h-7 w-10 rounded border border-white/10 bg-transparent"
+                                      className="h-7 w-10 rounded border border-[#37332d] bg-transparent"
                                     />
-                                    <span className="font-mono text-xs text-zinc-300">
+                                    <span className="font-mono text-xs text-[#c1b9ab]">
                                       {textNodeTitleColor}
                                     </span>
                                   </div>
-                                  <div className="flex h-11 items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3 sm:col-span-2">
+                                  <div className="flex h-11 items-center gap-3 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 sm:col-span-2">
                                     <input
                                       type="color"
                                       value={textNodeSubtitleColor}
                                       onChange={(event) =>
                                         setTextNodeSubtitleColor(event.target.value)
                                       }
-                                      className="h-7 w-10 rounded border border-white/10 bg-transparent"
+                                      className="h-7 w-10 rounded border border-[#37332d] bg-transparent"
                                     />
-                                    <span className="font-mono text-xs text-zinc-300">
+                                    <span className="font-mono text-xs text-[#c1b9ab]">
                                       {textNodeSubtitleColor}
                                     </span>
                                   </div>
@@ -2034,15 +2045,15 @@ export function PagesDashboard() {
                             </>
                           ) : null}
 
-                          <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                          <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
                             <div className="mb-3 flex items-center gap-2">
-                              <Braces className="h-4 w-4 text-zinc-400" />
-                              <p className="text-sm font-semibold text-white">
+                              <Braces className="h-4 w-4 text-[#9f9789]" />
+                              <p className="text-sm font-semibold text-[#f4efe5]">
                                 Advanced props
                               </p>
                             </div>
                             <textarea
-                              className="h-36 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 font-mono text-xs text-white outline-none transition focus:border-sky-400/50"
+                              className="h-36 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 font-mono text-xs text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                               placeholder='{"custom":"value"}'
                               value={advancedNodePropsText}
                               onChange={(event) =>
@@ -2053,7 +2064,7 @@ export function PagesDashboard() {
 
                           <div className="flex gap-2">
                             <Button
-                              className="h-11 rounded-xl border-violet-500/30 bg-violet-500 px-4 text-sm font-semibold text-black hover:bg-violet-400 disabled:opacity-50"
+                              className="h-11 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                               disabled={
                                 updateNodeMutation.isPending ||
                                 ((selectedNode.type === "node-product" ||
@@ -2165,7 +2176,7 @@ export function PagesDashboard() {
                               Save node
                             </Button>
                             <Button
-                              className="h-11 rounded-xl border-red-500/30 bg-red-500/80 px-4 text-sm font-semibold text-black hover:bg-red-400 disabled:opacity-50"
+                              className="h-11 rounded-[10px] border border-[#553531] bg-[#4a2b28] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#5a3330] disabled:opacity-50"
                               disabled={removeNodeMutation.isPending}
                               onClick={() =>
                                 removeNodeMutation.mutate({ nodeId: selectedNode.id })
@@ -2176,7 +2187,7 @@ export function PagesDashboard() {
                           </div>
                         </>
                       ) : (
-                        <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-500">
+                        <div className="rounded-[10px] border border-dashed border-[#302d28] bg-[#151411] px-4 py-3 text-sm text-[#7f786b]">
                           Select a node from the page content list to edit its content.
                         </div>
                       )}
@@ -2184,14 +2195,14 @@ export function PagesDashboard() {
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+                <div className="min-w-0 rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
-                        <LayoutGrid className="h-4 w-4 text-sky-300" />
-                        <h2 className="text-lg font-semibold text-white">Page canvas</h2>
+                        <LayoutGrid className="h-4 w-4 text-[#d7c29f]" />
+                        <h2 className="text-lg font-semibold text-[#f4efe5]">Page canvas</h2>
                       </div>
-                      <p className="mt-1 text-xs text-zinc-400">
+                      <p className="mt-1 text-xs text-[#9f9789]">
                         Preview the actual runtime shell and edit each saved breakpoint layout independently.
                       </p>
                     </div>
@@ -2203,17 +2214,17 @@ export function PagesDashboard() {
                           key={breakpoint}
                           type="button"
                           onClick={() => setPreviewBreakpoint(breakpoint)}
-                          className={`h-10 rounded-xl border px-4 text-sm font-semibold transition ${
+                          className={`h-10 rounded-[10px] border px-4 text-sm font-semibold transition ${
                             previewBreakpoint === breakpoint
-                              ? "border-sky-400/50 bg-sky-400 text-black"
-                              : "border-white/10 bg-black/30 text-zinc-300 hover:bg-white/5"
+                              ? "border-[#4b412f] bg-[#8d7a56] text-[#15130f]"
+                              : "border-[#37332d] bg-[#11100d] text-[#c1b9ab] hover:bg-[#1d1b17]"
                           }`}
                         >
                           {PREVIEW_BREAKPOINTS[breakpoint].label}
                         </button>
                       ))}
                       <Button
-                        className="h-10 rounded-xl border-sky-500/30 bg-sky-500 px-4 text-sm font-semibold text-black hover:bg-sky-400 disabled:opacity-50"
+                        className="h-10 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                         disabled={updateNodeMutation.isPending || !(selectedPage.items ?? []).length}
                         onClick={() => void saveGridLayout()}
                       >
@@ -2222,21 +2233,24 @@ export function PagesDashboard() {
                     </div>
                   </div>
 
-                  <div className="mt-4 rounded-3xl border border-white/10 bg-black/30 p-4">
+                  <div className="mt-4 min-w-0 rounded-[12px] border border-[#37332d] bg-[#11100d] p-4">
                     {(selectedPage.items ?? []).length ? (
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-zinc-400">
+                        <div className="flex items-center justify-between gap-3 rounded-[10px] border border-[#302d28] bg-[#151411] px-4 py-3 text-xs text-[#9f9789]">
                           <span>
-                            Editing the <span className="font-semibold text-white">{PREVIEW_BREAKPOINTS[previewBreakpoint].label}</span> layout.
+                            Editing the <span className="font-semibold text-[#f4efe5]">{PREVIEW_BREAKPOINTS[previewBreakpoint].label}</span> layout.
                           </span>
-                          <span className="font-mono uppercase tracking-[0.18em] text-zinc-500">
+                          <span className="font-mono text-[#7f786b]">
                             Saved separately for {previewBreakpoint}
                           </span>
                         </div>
-                        <div className="overflow-x-auto rounded-[32px] border border-white/10 bg-black/40 p-4">
+                        <div className="w-full max-w-full overflow-x-auto rounded-[12px] border border-[#2e2b26] bg-[#141310] p-4">
                           <div
-                            className="mx-auto overflow-hidden rounded-[28px] border border-white/10 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
-                            style={{ width: PREVIEW_BREAKPOINTS[previewBreakpoint].width }}
+                            className="mx-auto min-w-max overflow-hidden rounded-[10px] border border-[#37332d] shadow-none"
+                            style={{
+                              width: PREVIEW_BREAKPOINTS[previewBreakpoint].width,
+                              maxWidth: "none",
+                            }}
                           >
                             <DynamicGrid
                               routePresetSlug={selectedPage.slug}
@@ -2265,7 +2279,7 @@ export function PagesDashboard() {
                         </div>
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-10 text-center text-sm text-zinc-500">
+                      <div className="rounded-[10px] border border-dashed border-[#302d28] bg-[#151411] p-10 text-center text-sm text-[#7f786b]">
                         Search a node on the left and add it to start building this page.
                       </div>
                     )}
@@ -2275,10 +2289,10 @@ export function PagesDashboard() {
                     {(selectedPage.items ?? []).map((node) => (
                       <div
                         key={node.id}
-                        className={`rounded-2xl border px-3 py-3 transition ${
+                        className={`rounded-[10px] border px-3 py-3 transition ${
                           selectedNodeId === node.id
-                            ? "border-violet-400/50 bg-violet-400/10"
-                            : "border-white/10 bg-black/20"
+                            ? "border-[#4b412f] bg-[#241f18]"
+                            : "border-[#302d28] bg-[#151411]"
                         }`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -2287,15 +2301,15 @@ export function PagesDashboard() {
                             onClick={() => selectNode(node.id)}
                             className="min-w-0 flex-1 text-left"
                           >
-                            <p className="truncate text-sm font-semibold text-white">
+                            <p className="truncate text-sm font-semibold text-[#f4efe5]">
                               {node.title || node.nodeKey}
                             </p>
-                            <p className="mt-1 truncate text-xs text-zinc-400">
+                            <p className="mt-1 truncate text-xs text-[#9f9789]">
                               {node.type} · sort {node.sortOrder}
                             </p>
                           </button>
                           <Button
-                            className="h-8 rounded-lg border-red-500/30 bg-red-500/80 px-2 text-[11px] font-semibold text-black hover:bg-red-400 disabled:opacity-50"
+                            className="h-8 rounded-[8px] border border-[#553531] bg-[#4a2b28] px-2 text-[11px] font-semibold text-[#15130f] hover:bg-[#5a3330] disabled:opacity-50"
                             disabled={removeNodeMutation.isPending}
                             onClick={() =>
                               removeNodeMutation.mutate({ nodeId: node.id })
@@ -2311,7 +2325,7 @@ export function PagesDashboard() {
               </div>
             </>
         ) : (
-          <div className="rounded-3xl border border-dashed border-white/10 bg-black/20 p-10 text-center text-zinc-500">
+          <div className="rounded-[12px] border border-dashed border-[#302d28] bg-[#151411] p-10 text-center text-[#7f786b]">
             Select a page from the hierarchy above to edit its settings and page content.
           </div>
         )}

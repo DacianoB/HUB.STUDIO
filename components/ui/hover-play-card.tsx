@@ -1,12 +1,18 @@
-"use client";
+'use client';
 
-import React, { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Pause, Play } from "lucide-react";
+import React, { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Pause, Play } from 'lucide-react';
 
-import { cn } from "~/lib/utils";
+import { cn } from '~/lib/utils';
 
-import { Button } from "~/components/ui/button";
+import { Button } from '~/components/ui/button';
+
+function formatDuration(duration: number) {
+  const minutes = Math.floor(duration / 60);
+  const seconds = Math.floor(duration % 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
 
 type HoverPlayCardProps = {
   src: string;
@@ -16,6 +22,9 @@ type HoverPlayCardProps = {
   loop?: boolean;
   mutedOnHover?: boolean;
   onOpen?: () => void;
+  overlayInteractive?: boolean;
+  keepPlayIconWhilePlaying?: boolean;
+  showCenterControl?: boolean;
 };
 
 export default function HoverPlayCard({
@@ -26,12 +35,16 @@ export default function HoverPlayCard({
   loop = false,
   mutedOnHover = true,
   onOpen,
+  overlayInteractive = true,
+  keepPlayIconWhilePlaying = false,
+  showCenterControl = true
 }: HoverPlayCardProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [userStarted, setUserStarted] = useState(false);
   const [prevMuted, setPrevMuted] = useState<boolean | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -80,6 +93,12 @@ export default function HoverPlayCard({
     const video = videoRef.current;
     if (!video) return;
 
+    const updateCurrentTime = () => {
+      const floored = Math.floor(video.currentTime);
+      setCurrentTime((prev) => (prev !== floored ? floored : prev));
+    };
+
+    video.addEventListener('timeupdate', updateCurrentTime);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onEnded = () => {
@@ -87,14 +106,15 @@ export default function HoverPlayCard({
       setUserStarted(false);
     };
 
-    video.addEventListener("play", onPlay);
-    video.addEventListener("pause", onPause);
-    video.addEventListener("ended", onEnded);
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('ended', onEnded);
 
     return () => {
-      video.removeEventListener("play", onPlay);
-      video.removeEventListener("pause", onPause);
-      video.removeEventListener("ended", onEnded);
+      video.removeEventListener('timeupdate', updateCurrentTime);
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('ended', onEnded);
     };
   }, []);
 
@@ -111,7 +131,7 @@ export default function HoverPlayCard({
         await video.play();
         setIsPlaying(true);
       } catch (error) {
-        console.error("Play failed:", error);
+        console.error('Play failed:', error);
         setIsPlaying(false);
       }
       return;
@@ -127,26 +147,36 @@ export default function HoverPlayCard({
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!onOpen) return;
-    if (event.key !== "Enter" && event.key !== " ") return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
 
     event.preventDefault();
     handleOpen();
   };
 
+  //get video total duration
+  const videoDuration = videoRef.current?.duration
+    ? formatDuration(videoRef.current.duration)
+    : 'Preview';
+
+  const showOverlay =
+    showCenterControl &&
+    (overlayInteractive ? isHovering || !isPlaying : !isPlaying);
+
   return (
     <div
       className={cn(
-        "group relative h-full overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-sm",
-        onOpen && "cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
-        className,
+        'group relative h-full overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-sm',
+        onOpen &&
+          'cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70',
+        className
       )}
       onClick={handleOpen}
       onKeyDown={handleKeyDown}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
-      role={onOpen ? "button" : undefined}
+      role={onOpen ? 'button' : undefined}
       tabIndex={onOpen ? 0 : undefined}
-      aria-label={title ? `Open ${title}` : "Open video"}
+      aria-label={title ? `Open ${title}` : 'Open video'}
     >
       <video
         ref={videoRef}
@@ -158,10 +188,10 @@ export default function HoverPlayCard({
         className="h-full w-full object-cover"
       />
 
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/70" />
+      {/* <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/5 via-transparent to-black/70" /> */}
 
       <AnimatePresence>
-        {(isHovering || !isPlaying) && (
+        {showOverlay && (
           <motion.div
             key="overlay"
             initial={{ opacity: 0 }}
@@ -169,24 +199,34 @@ export default function HoverPlayCard({
             exit={{ opacity: 0 }}
             className="pointer-events-none absolute inset-0 flex items-center justify-center"
           >
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={(event) => {
-                event.stopPropagation();
-                void handleIconClick();
-              }}
-              className="pointer-events-auto h-16 w-16 rounded-full bg-black/25 text-white hover:bg-black/45"
-              aria-label={isPlaying ? "Pause video" : "Play video"}
-            >
-              {isPlaying ? <Pause className="h-8 w-8" /> : <Play className="h-8 w-8" />}
-            </Button>
+            {overlayInteractive ? (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleIconClick();
+                }}
+                className="pointer-events-auto h-16 w-16 rounded-full bg-black/25 text-white hover:bg-black/45"
+                aria-label={isPlaying ? 'Pause video' : 'Play video'}
+              >
+                {isPlaying && !keepPlayIconWhilePlaying ? (
+                  <Pause className="h-8 w-8" />
+                ) : (
+                  <Play className="h-8 w-8" />
+                )}
+              </Button>
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/25 text-white">
+                <Play className="h-8 w-8" />
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
 
       <div className="absolute bottom-3 left-3 rounded-full bg-black/35 px-2 py-1 text-xs text-white/85 backdrop-blur">
-        {isPlaying ? "Playing" : "Preview"}
+        {isPlaying ? formatDuration(currentTime) : videoDuration}
       </div>
     </div>
   );

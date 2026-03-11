@@ -66,6 +66,7 @@ type LibraryAssetSnapshot = {
   title: string;
   url: string;
   type: string;
+  tags?: string[];
   systemTags?: string[];
   targetUrl?: string | null;
   openInNewTab?: boolean | null;
@@ -139,6 +140,11 @@ function toLibraryAssetSnapshot(
     title: String(asset.title ?? ''),
     url: String(asset.url ?? ''),
     type: String(asset.type ?? 'FILE'),
+    tags: Array.isArray(asset.tags)
+      ? asset.tags.filter(
+          (tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())
+        )
+      : [],
     systemTags: Array.isArray(asset.systemTags)
       ? asset.systemTags.filter(
           (tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())
@@ -212,6 +218,66 @@ function readLibraryItemLayout(
 
 function readLibraryOpenInModal(props?: Record<string, unknown>) {
   return Boolean(props?.openInModal);
+}
+
+function normalizeLibraryTag(tag: string) {
+  return tag.trim().toLowerCase();
+}
+
+function readComparableLibraryTags(asset?: {
+  tags?: string[];
+} | null) {
+  if (!asset?.tags?.length) return [] as string[];
+
+  const seen = new Set<string>();
+  const normalizedTags: string[] = [];
+
+  for (const tag of asset.tags) {
+    if (typeof tag !== 'string') continue;
+    const normalized = normalizeLibraryTag(tag);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    normalizedTags.push(normalized);
+  }
+
+  return normalizedTags;
+}
+
+function sortAssetsByRelatedTags(
+  assets: LibraryAssetSnapshot[],
+  selectedAssetId: string,
+  selectedAsset?: LibraryAssetSnapshot | null
+) {
+  const selectedTags = new Set(readComparableLibraryTags(selectedAsset));
+  if (!selectedTags.size) {
+    return [
+      ...assets.filter((asset) => asset.id === selectedAssetId),
+      ...assets.filter((asset) => asset.id !== selectedAssetId)
+    ];
+  }
+
+  const selectedItems = assets.filter((asset) => asset.id === selectedAssetId);
+  const relatedItems = assets
+    .map((asset, index) => ({
+      asset,
+      index,
+      relationScore:
+        asset.id === selectedAssetId
+          ? Number.POSITIVE_INFINITY
+          : readComparableLibraryTags(asset).reduce(
+              (score, tag) => score + (selectedTags.has(tag) ? 1 : 0),
+              0
+            )
+    }))
+    .filter(({ asset }) => asset.id !== selectedAssetId)
+    .sort((left, right) => {
+      const relationDelta = right.relationScore - left.relationScore;
+      if (relationDelta !== 0) return relationDelta;
+      return left.index - right.index;
+    })
+    .map(({ asset }) => asset);
+
+  return [...selectedItems, ...relatedItems];
 }
 
 function hashLibrarySeed(input: string) {
@@ -384,15 +450,20 @@ function expandLibraryViewItems(
       Boolean(embeddedLibraryAsset?.assetId) &&
       (!embeddedLibraryAsset?.sourceNodeId ||
         embeddedLibraryAsset.sourceNodeId === item.i);
-    const orderedAssets = shouldPromoteEmbeddedAsset
-      ? [
-          ...assets.filter(
-            (asset) => asset.id === embeddedLibraryAsset?.assetId
-          ),
-          ...assets.filter(
-            (asset) => asset.id !== embeddedLibraryAsset?.assetId
+    const selectedAsset =
+      assets.find((asset) => asset.id === embeddedLibraryAsset?.assetId) ??
+      (embeddedLibraryAsset?.asset &&
+      typeof embeddedLibraryAsset.asset === 'object'
+        ? toLibraryAssetSnapshot(
+            embeddedLibraryAsset.asset as Record<string, unknown>
           )
-        ]
+        : null);
+    const orderedAssets = shouldPromoteEmbeddedAsset
+      ? sortAssetsByRelatedTags(
+          assets,
+          embeddedLibraryAsset?.assetId ?? '',
+          selectedAsset
+        )
       : assets;
     const basePosition = layoutById?.get(item.i) ??
       item.position?.[breakpoint] ?? {

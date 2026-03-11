@@ -24,6 +24,8 @@
   --input: 240 4% 16%;
   --ring: 262 83% 58%;
   --radius: 0.75rem;
+
+  --complete: #77de55;
 }
 
 body {

@@ -7,18 +7,7 @@ import {
   tenantProcedure,
 } from "~/server/api/trpc";
 import { resolveVisitorSession } from "~/server/api/visitor-sessions";
-
-type StepQuestionnaireOption = {
-  id: string;
-  label: string;
-};
-
-type StepQuestionnaire = {
-  prompt: string;
-  options: StepQuestionnaireOption[];
-  correctOptionId?: string;
-  successMessage?: string;
-};
+import { readStepQuestionnaire, type StepQuestionnaire } from "~/lib/step-questionnaire";
 
 type StepMetadata = {
   questionnaire?: StepQuestionnaire;
@@ -51,50 +40,8 @@ function readStepMetadata(metadata: unknown): StepMetadata {
   }
 
   const candidate = metadata as Record<string, unknown>;
-  const rawQuestionnaire =
-    candidate.questionnaire && typeof candidate.questionnaire === "object"
-      ? (candidate.questionnaire as Record<string, unknown>)
-      : null;
-  const rawOptions = Array.isArray(rawQuestionnaire?.options)
-    ? rawQuestionnaire.options
-    : [];
-  const options = rawOptions
-    .filter(
-      (option): option is Record<string, unknown> =>
-        Boolean(option) && typeof option === "object",
-    )
-    .map((option, index) => ({
-      id:
-        typeof option.id === "string" && option.id.trim()
-          ? option.id.trim()
-          : `option-${index + 1}`,
-      label: typeof option.label === "string" ? option.label.trim() : "",
-    }))
-    .filter((option) => option.label.length > 0);
-
-  if (
-    !rawQuestionnaire ||
-    typeof rawQuestionnaire.prompt !== "string" ||
-    !rawQuestionnaire.prompt.trim() ||
-    options.length < 2
-  ) {
-    return {};
-  }
-
   return {
-    questionnaire: {
-      prompt: rawQuestionnaire.prompt.trim(),
-      options,
-      correctOptionId:
-        typeof rawQuestionnaire.correctOptionId === "string"
-          ? rawQuestionnaire.correctOptionId
-          : undefined,
-      successMessage:
-        typeof rawQuestionnaire.successMessage === "string" &&
-        rawQuestionnaire.successMessage.trim()
-          ? rawQuestionnaire.successMessage.trim()
-          : undefined,
-    },
+    questionnaire: readStepQuestionnaire(candidate.questionnaire),
   };
 }
 
@@ -516,7 +463,14 @@ export const progressRouter = createTRPCRouter({
       z.object({
         productId: z.string().cuid(),
         stepId: z.string().cuid(),
-        answerId: z.string().min(1).max(191),
+        answers: z
+          .array(
+            z.object({
+              questionId: z.string().min(1).max(191),
+              answerId: z.string().min(1).max(191),
+            }),
+          )
+          .min(1),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -538,20 +492,43 @@ export const progressRouter = createTRPCRouter({
         });
       }
 
-      const selectedOption = questionnaire.options.find(
-        (option) => option.id === input.answerId,
+      const answerByQuestionId = new Map(
+        input.answers.map((answer) => [answer.questionId, answer.answerId]),
       );
+      const evaluatedAnswers = questionnaire.questions.map((question) => {
+        const answerId = answerByQuestionId.get(question.id);
+        const selectedOption = question.options.find((option) => option.id === answerId);
 
-      if (!selectedOption) {
+        if (!selectedOption) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Answer every question before submitting the test.",
+          });
+        }
+
+        const isCorrect =
+          question.correctOptionId == null || question.correctOptionId === answerId;
+
+        return {
+          questionId: question.id,
+          answerId,
+          correct: isCorrect,
+        };
+      });
+      const correctCount = evaluatedAnswers.filter((answer) => answer.correct).length;
+      const totalQuestions = questionnaire.questions.length;
+      const passingScore = Math.max(
+        1,
+        Math.min(questionnaire.passingScore ?? totalQuestions, totalQuestions),
+      );
+      const passed = correctCount >= passingScore;
+
+      if (!evaluatedAnswers.length) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Selected answer is not valid for this questionnaire.",
+          message: "This test does not have any valid questions yet.",
         });
       }
-
-      const isCorrect =
-        questionnaire.correctOptionId == null ||
-        questionnaire.correctOptionId === input.answerId;
 
       return ctx.db.$transaction(async (tx) => {
         const existing = await tx.userProductProgress.findUnique({
@@ -569,9 +546,22 @@ export const progressRouter = createTRPCRouter({
             ? (existing.metadata as Record<string, unknown>)
             : {}),
           questionnaire: {
-            answerId: input.answerId,
+            answers: evaluatedAnswers,
             answeredAt: new Date().toISOString(),
-            passed: isCorrect,
+            passed,
+            correctCount,
+            totalQuestions,
+            passingScore,
+            attempts:
+              typeof (
+                existing?.metadata as
+                  | { questionnaire?: { attempts?: number } }
+                  | null
+                  | undefined
+              )?.questionnaire?.attempts === "number"
+                ? ((existing?.metadata as { questionnaire?: { attempts?: number } })
+                    .questionnaire?.attempts ?? 0) + 1
+                : 1,
           },
         };
 
@@ -590,16 +580,16 @@ export const progressRouter = createTRPCRouter({
             stepId: input.stepId,
             firstAccessedAt: new Date(),
             lastAccessedAt: new Date(),
-            completedAt: isCorrect ? new Date() : null,
-            status: isCorrect ? "COMPLETED" : "IN_PROGRESS",
-            watchPercent: isCorrect ? 100 : existing?.watchPercent ?? 0,
+            completedAt: passed ? new Date() : null,
+            status: passed ? "COMPLETED" : "IN_PROGRESS",
+            watchPercent: passed ? 100 : existing?.watchPercent ?? 0,
             metadata: nextMetadata,
           },
           update: {
             lastAccessedAt: new Date(),
-            completedAt: isCorrect ? new Date() : null,
-            status: isCorrect ? "COMPLETED" : "IN_PROGRESS",
-            watchPercent: isCorrect ? 100 : undefined,
+            completedAt: passed ? new Date() : null,
+            status: passed ? "COMPLETED" : "IN_PROGRESS",
+            watchPercent: passed ? 100 : undefined,
             metadata: nextMetadata,
           },
         });
@@ -610,23 +600,29 @@ export const progressRouter = createTRPCRouter({
             userId: ctx.session!.user.id,
             productId: input.productId,
             stepId: input.stepId,
-            action: isCorrect ? "COMPLETED" : "PROGRESSED",
-            progressPercent: isCorrect ? 100 : existing?.watchPercent ?? 0,
+            action: passed ? "COMPLETED" : "PROGRESSED",
+            progressPercent: passed ? 100 : existing?.watchPercent ?? 0,
             metadata: {
               questionnaire: {
-                answerId: input.answerId,
-                passed: isCorrect,
+                answers: evaluatedAnswers,
+                passed,
+                correctCount,
+                totalQuestions,
+                passingScore,
               },
             },
           },
         });
 
         return {
-          correct: isCorrect,
-          successMessage:
-            isCorrect
-              ? questionnaire.successMessage ?? "Step completed."
-              : "Try again before unlocking the next step.",
+          passed,
+          correctCount,
+          totalQuestions,
+          passingScore,
+          successMessage: passed
+            ? questionnaire.successMessage ?? "You passed the test and completed this step."
+            : questionnaire.failureMessage ??
+              "You did not pass yet. Review the step and try the test again.",
           progress,
         };
       });

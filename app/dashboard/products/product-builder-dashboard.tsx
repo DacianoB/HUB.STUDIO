@@ -385,7 +385,6 @@ export function ProductBuilderDashboard() {
   const [newAssetTitle, setNewAssetTitle] = useState('');
   const [newAssetUrl, setNewAssetUrl] = useState('');
   const [newAssetType, setNewAssetType] = useState<ProductAssetType>('LINK');
-  const [newAssetStepId, setNewAssetStepId] = useState('');
   const [newAssetDownloadable, setNewAssetDownloadable] = useState(false);
   const [assetFeedback, setAssetFeedback] = useState('');
   const [newFeatureDescription, setNewFeatureDescription] = useState('');
@@ -520,17 +519,26 @@ export function ProductBuilderDashboard() {
       ),
     [selectedProductModuleConfigs]
   );
+  const canEditStandaloneCourse =
+    selectedProductEnabledModules.has('COURSE') || selectedProduct?.type === 'COURSE';
+  const activeSelectedFeatureEditorId =
+    !selectedProductId
+      ? STANDALONE_COURSE_EDITOR_ID
+      : selectedFeatureEditorId !== STANDALONE_COURSE_EDITOR_ID &&
+          !selectedProductFeatures.some((feature) => feature.id === selectedFeatureEditorId)
+        ? canEditStandaloneCourse
+          ? STANDALONE_COURSE_EDITOR_ID
+          : (selectedProductFeatures[0]?.id ?? STANDALONE_COURSE_EDITOR_ID)
+        : selectedFeatureEditorId;
   const selectedFeature = useMemo(
     () =>
       selectedProductFeatures.find(
-        (feature) => feature.id === selectedFeatureEditorId
+        (feature) => feature.id === activeSelectedFeatureEditorId
       ) ?? null,
-    [selectedFeatureEditorId, selectedProductFeatures]
+    [activeSelectedFeatureEditorId, selectedProductFeatures]
   );
   const isStandaloneCourseEditor =
-    selectedFeatureEditorId === STANDALONE_COURSE_EDITOR_ID;
-  const canEditStandaloneCourse =
-    selectedProductEnabledModules.has('COURSE') || selectedProduct?.type === 'COURSE';
+    activeSelectedFeatureEditorId === STANDALONE_COURSE_EDITOR_ID;
   const scopedSteps = useMemo(
     () =>
       selectedProductSteps
@@ -553,10 +561,31 @@ export function ProductBuilderDashboard() {
         .sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title)),
     [isStandaloneCourseEditor, selectedFeature?.id, selectedProductAssets]
   );
+  const activeSelectedStepEditorId = scopedSteps.some(
+    (step) => step.id === selectedStepEditorId
+  )
+    ? selectedStepEditorId
+    : (scopedSteps[0]?.id ?? '');
   const selectedScopedStep = useMemo(
-    () => scopedSteps.find((step) => step.id === selectedStepEditorId) ?? null,
-    [scopedSteps, selectedStepEditorId]
+    () => scopedSteps.find((step) => step.id === activeSelectedStepEditorId) ?? null,
+    [activeSelectedStepEditorId, scopedSteps]
   );
+  const activeEditStepTitle =
+    selectedScopedStep && editingStepId !== selectedScopedStep.id
+      ? selectedScopedStep.title
+      : editStepTitle;
+  const activeEditStepDescription =
+    selectedScopedStep && editingStepId !== selectedScopedStep.id
+      ? (selectedScopedStep.description ?? '')
+      : editStepDescription;
+  const activeEditStepRequired =
+    selectedScopedStep && editingStepId !== selectedScopedStep.id
+      ? selectedScopedStep.isRequired
+      : editStepRequired;
+  const activeEditStepLocked =
+    selectedScopedStep && editingStepId !== selectedScopedStep.id
+      ? selectedScopedStep.lockUntilComplete
+      : editStepLocked;
   const selectedStepAssets = useMemo(
     () =>
       selectedScopedStep
@@ -959,62 +988,6 @@ export function ProductBuilderDashboard() {
     'h-10 w-full rounded-md border border-zinc-800 bg-zinc-950/70 px-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60';
   const selectClass =
     'h-10 w-full rounded-md border border-zinc-800 bg-zinc-950/70 px-3 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/60';
-
-  useEffect(() => {
-    if (!selectedProductId) {
-      setSelectedFeatureEditorId(STANDALONE_COURSE_EDITOR_ID);
-      setSelectedStepEditorId('');
-      return;
-    }
-    if (
-      selectedFeatureEditorId !== STANDALONE_COURSE_EDITOR_ID &&
-      !selectedProductFeatures.some((feature) => feature.id === selectedFeatureEditorId)
-    ) {
-      setSelectedFeatureEditorId(
-        canEditStandaloneCourse
-          ? STANDALONE_COURSE_EDITOR_ID
-          : (selectedProductFeatures[0]?.id ?? STANDALONE_COURSE_EDITOR_ID)
-      );
-    }
-  }, [
-    canEditStandaloneCourse,
-    selectedFeatureEditorId,
-    selectedProductFeatures,
-    selectedProductId
-  ]);
-
-  useEffect(() => {
-    if (!selectedProduct) return;
-    setEditProductTitle(selectedProduct.name);
-    setEditProductSubtitle(
-      (selectedProduct as { subtitle?: string | null }).subtitle ?? ''
-    );
-    setEditProductDescription(selectedProduct.description ?? '');
-    setEditProductType(selectedProduct.type as ProductType);
-  }, [selectedProduct]);
-
-  useEffect(() => {
-    if (!scopedSteps.length) {
-      setSelectedStepEditorId('');
-      return;
-    }
-    if (!scopedSteps.some((step) => step.id === selectedStepEditorId)) {
-      const firstStep = scopedSteps[0];
-      if (!firstStep) return;
-      setSelectedStepEditorId(firstStep.id);
-      setEditingStepId(firstStep.id);
-      setEditStepTitle(firstStep.title);
-      setEditStepDescription(firstStep.description ?? '');
-      setEditStepRequired(firstStep.isRequired);
-      setEditStepLocked(firstStep.lockUntilComplete);
-    }
-  }, [scopedSteps, selectedStepEditorId]);
-
-  useEffect(() => {
-    if (!scopedSteps.some((step) => step.id === newAssetStepId)) {
-      setNewAssetStepId('');
-    }
-  }, [newAssetStepId, scopedSteps]);
 
   return (
     <div className="space-y-5">
@@ -1897,7 +1870,7 @@ export function ProductBuilderDashboard() {
                               (step) => step.featureId === feature.id
                             );
                             const featureModule = readFeatureModuleType(feature);
-                            const isActive = selectedFeatureEditorId === feature.id;
+                            const isActive = activeSelectedFeatureEditorId === feature.id;
                             return (
                               <div
                                 key={feature.id}
@@ -2086,7 +2059,7 @@ export function ProductBuilderDashboard() {
                                   type="button"
                                   onClick={() => openEditStepModal(step)}
                                   className={`w-full rounded-lg border p-3 text-left transition ${
-                                    selectedStepEditorId === step.id
+                                    activeSelectedStepEditorId === step.id
                                       ? 'border-emerald-500/60 bg-emerald-500/10'
                                       : 'border-zinc-800 bg-black/30 hover:border-zinc-700 hover:bg-black/40'
                                   }`}
@@ -2150,38 +2123,42 @@ export function ProductBuilderDashboard() {
                                 <div className="mt-4 grid gap-3">
                                   <input
                                     className={inputClass}
-                                    value={editStepTitle}
-                                    onChange={(event) =>
-                                      setEditStepTitle(event.target.value)
-                                    }
+                                    value={activeEditStepTitle}
+                                    onChange={(event) => {
+                                      setEditingStepId(selectedScopedStep.id);
+                                      setEditStepTitle(event.target.value);
+                                    }}
                                     placeholder="Step title"
                                   />
                                   <textarea
                                     className="h-28 rounded-md border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60"
-                                    value={editStepDescription}
-                                    onChange={(event) =>
-                                      setEditStepDescription(event.target.value)
-                                    }
+                                    value={activeEditStepDescription}
+                                    onChange={(event) => {
+                                      setEditingStepId(selectedScopedStep.id);
+                                      setEditStepDescription(event.target.value);
+                                    }}
                                     placeholder="Describe what happens in this step"
                                   />
                                   <div className="grid gap-2 sm:grid-cols-2">
                                     <label className="flex h-10 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/70 px-3 text-xs text-zinc-300">
                                       <input
                                         type="checkbox"
-                                        checked={editStepRequired}
-                                        onChange={(event) =>
-                                          setEditStepRequired(event.target.checked)
-                                        }
+                                        checked={activeEditStepRequired}
+                                        onChange={(event) => {
+                                          setEditingStepId(selectedScopedStep.id);
+                                          setEditStepRequired(event.target.checked);
+                                        }}
                                       />
                                       Required
                                     </label>
                                     <label className="flex h-10 items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/70 px-3 text-xs text-zinc-300">
                                       <input
                                         type="checkbox"
-                                        checked={editStepLocked}
-                                        onChange={(event) =>
-                                          setEditStepLocked(event.target.checked)
-                                        }
+                                        checked={activeEditStepLocked}
+                                        onChange={(event) => {
+                                          setEditingStepId(selectedScopedStep.id);
+                                          setEditStepLocked(event.target.checked);
+                                        }}
                                       />
                                       Lock until complete
                                     </label>
@@ -2189,15 +2166,18 @@ export function ProductBuilderDashboard() {
                                   <Button
                                     type="button"
                                     className="h-10 border-emerald-500/30 bg-emerald-500 px-4 text-xs font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
-                                    disabled={!editStepTitle.trim() || updateStepMutation.isPending}
+                                    disabled={
+                                      !activeEditStepTitle.trim() ||
+                                      updateStepMutation.isPending
+                                    }
                                     onClick={() =>
                                       updateStepMutation.mutate({
                                         stepId: selectedScopedStep.id,
-                                        title: editStepTitle.trim(),
+                                        title: activeEditStepTitle.trim(),
                                         description:
-                                          editStepDescription.trim() || null,
-                                        isRequired: editStepRequired,
-                                        lockUntilComplete: editStepLocked
+                                          activeEditStepDescription.trim() || null,
+                                        isRequired: activeEditStepRequired,
+                                        lockUntilComplete: activeEditStepLocked
                                       })
                                     }
                                   >

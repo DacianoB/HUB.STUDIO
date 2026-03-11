@@ -1,7 +1,7 @@
 "use client";
 
+import type { CSSProperties, ChangeEvent } from "react";
 import Link from "next/link";
-import type { ChangeEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -16,7 +16,23 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { AdminShell } from "~/app/admin/dashboard/admin-shell";
+import {
+  LibraryAssetGalleryCard,
+  type LibraryAssetCardAsset,
+} from "~/app/library/library-asset-card";
+import {
+  LibraryAssetDetailPanel,
+  type InitialAssetData,
+} from "~/app/library/library-asset-detail";
 import { Button } from "~/components/ui/button";
+import {
+  clampPassingScore,
+  readStepQuestionnaire,
+  type StepQuestionnaire,
+  type StepQuestionnaireOption,
+  type StepQuestionnaireQuestion,
+} from "~/lib/step-questionnaire";
 import { ACTIVE_TENANT_STORAGE_KEY, api } from "~/trpc/react";
 
 type ProductEditorMode = "create" | "edit";
@@ -32,15 +48,7 @@ type ProductAssetType = "VIDEO" | "PDF" | "FILE" | "IMAGE" | "LINK";
 type StepMetadata = {
   coverImageUrl?: string;
   content?: string;
-  questionnaire?: {
-    prompt: string;
-    options: Array<{
-      id: string;
-      label: string;
-    }>;
-    correctOptionId?: string;
-    successMessage?: string;
-  };
+  questionnaire?: StepQuestionnaire;
 };
 
 type LibraryAssetMetadata = {
@@ -48,12 +56,30 @@ type LibraryAssetMetadata = {
   showDownloads?: boolean;
   showLikes?: boolean;
   sourceLibraryAssetId?: string;
+  tags?: string[];
+  weight?: number;
 };
 
 type ProductEditorProps = {
   mode: ProductEditorMode;
   productId?: string;
 };
+
+const LIBRARY_EDITOR_PREVIEW_THEME = {
+  "--tenant-bg-main": "#151411",
+  "--tenant-bg-secondary": "#1b1916",
+  "--tenant-text-main": "#15130f",
+  "--tenant-text-secondary": "#6c6252",
+  "--tenant-border": "#d6cbbb",
+  "--tenant-accent": "#c8a76b",
+  "--tenant-button-primary": "#e9e3da",
+  "--tenant-button-primary-hover": "#ddd5ca",
+  "--tenant-button-text": "#15130f",
+  "--tenant-card-bg": "#f4efe5",
+  "--tenant-node-radius": "12px",
+  "--tenant-node-radius-sm": "10px",
+  "--tenant-node-radius-pill": "999px",
+} as CSSProperties;
 
 const PRODUCT_TYPES: Array<[ProductType, string]> = [
   ["COURSE", "Course"],
@@ -80,59 +106,231 @@ const MODULE_COPY: Record<
     icon: BookOpen,
   },
 };
+const ALL_PRODUCT_MODULES: ProductModuleType[] = ["LIBRARY", "COURSE"];
 
 const DEFAULT_PRODUCT_CURRENCY = "USD";
-const STEP_QUESTION_OPTION_IDS = [
-  "option-1",
-  "option-2",
-  "option-3",
-  "option-4",
-] as const;
+const DEFAULT_STEP_QUESTION_OPTION_COUNT = 4;
 type PricingMode = "FREE" | "PAID";
 
 function readStepMetadata(step: { metadata?: unknown }): StepMetadata {
   if (!step.metadata || typeof step.metadata !== "object") return {};
-  return step.metadata as StepMetadata;
+  const metadata = step.metadata as Record<string, unknown>;
+  return {
+    coverImageUrl:
+      typeof metadata.coverImageUrl === "string" ? metadata.coverImageUrl : undefined,
+    content: typeof metadata.content === "string" ? metadata.content : undefined,
+    questionnaire: readStepQuestionnaire(metadata.questionnaire),
+  };
 }
 
-function normalizeQuestionnaireOptions(options: Array<{ id: string; label: string }> | undefined) {
-  return STEP_QUESTION_OPTION_IDS.map((id, index) => {
-    const existing = options?.find((option) => option.id === id) ?? options?.[index];
-    return existing?.label ?? "";
+function createQuestionOption(index: number): StepQuestionnaireOption {
+  return {
+    id: `option-${index + 1}`,
+    label: "",
+  };
+}
+
+function createQuestion(index: number): StepQuestionnaireQuestion {
+  return {
+    id: `question-${index + 1}`,
+    prompt: "",
+    options: Array.from({ length: DEFAULT_STEP_QUESTION_OPTION_COUNT }, (_, optionIndex) =>
+      createQuestionOption(optionIndex),
+    ),
+    correctOptionId: "option-1",
+  };
+}
+
+function normalizeQuestionnaireQuestions(
+  questions: StepQuestionnaireQuestion[] | undefined,
+) {
+  if (!questions?.length) {
+    return [createQuestion(0)];
+  }
+
+  return questions.map((question, index) => {
+    const options = question.options.length
+      ? question.options.map((option, optionIndex) => ({
+          id: option.id || `option-${optionIndex + 1}`,
+          label: option.label ?? "",
+        }))
+      : Array.from({ length: DEFAULT_STEP_QUESTION_OPTION_COUNT }, (_, optionIndex) =>
+          createQuestionOption(optionIndex),
+        );
+    const correctOptionId = options.some(
+      (option) => option.id === question.correctOptionId,
+    )
+      ? question.correctOptionId
+      : options[0]?.id;
+
+    return {
+      id: question.id || `question-${index + 1}`,
+      prompt: question.prompt ?? "",
+      options,
+      correctOptionId,
+    } satisfies StepQuestionnaireQuestion;
   });
 }
 
 function buildStepQuestionnaire(input: {
   enabled: boolean;
-  prompt: string;
-  options: string[];
-  correctIndex: number;
+  questions: StepQuestionnaireQuestion[];
+  passingScore: number;
   successMessage: string;
+  failureMessage: string;
 }) {
   if (!input.enabled) return undefined;
 
-  const prompt = input.prompt.trim();
-  const options = input.options
-    .map((label, index) => ({
-      id: STEP_QUESTION_OPTION_IDS[index] ?? `option-${index + 1}`,
-      label: label.trim(),
-    }))
-    .filter((option) => option.label);
+  const questions = input.questions.reduce<StepQuestionnaireQuestion[]>(
+    (accumulator, question, questionIndex) => {
+      const prompt = question.prompt.trim();
+      const options = question.options
+        .map((option, optionIndex) => ({
+          id: option.id || `option-${optionIndex + 1}`,
+          label: option.label.trim(),
+        }))
+        .filter((option) => option.label);
 
-  if (!prompt || options.length < 2) return undefined;
+      if (!prompt || options.length < 2) {
+        return accumulator;
+      }
 
-  const safeCorrectIndex = Math.max(0, Math.min(input.correctIndex, options.length - 1));
+      const correctOptionId = options.some(
+        (option) => option.id === question.correctOptionId,
+      )
+        ? question.correctOptionId
+        : options[0]?.id;
+
+      accumulator.push({
+        id: question.id || `question-${questionIndex + 1}`,
+        prompt,
+        options,
+        correctOptionId,
+      });
+
+      return accumulator;
+    },
+    [],
+  );
+
+  if (!questions.length) return undefined;
+
   return {
-    prompt,
-    options,
-    correctOptionId: options[safeCorrectIndex]?.id,
+    questions,
+    passingScore: clampPassingScore(input.passingScore, questions.length),
     successMessage: input.successMessage.trim() || undefined,
-  };
+    failureMessage: input.failureMessage.trim() || undefined,
+  } satisfies StepQuestionnaire;
 }
 
 function readLibraryAssetMetadata(asset: { metadata?: unknown }): LibraryAssetMetadata {
   if (!asset.metadata || typeof asset.metadata !== "object") return {};
   return asset.metadata as LibraryAssetMetadata;
+}
+
+function normalizeLibraryTag(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^#+/, "")
+    .replace(/[^\p{L}\p{N}_-]+/gu, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized ? `#${normalized}` : null;
+}
+
+function parseLibraryTagsInput(value: string) {
+  const candidates = value.match(/#[^\s,;]+|[^\s,;]+/g) ?? [];
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeLibraryTag(candidate);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    tags.push(normalized);
+  }
+
+  return tags;
+}
+
+function formatLibraryTags(tags: string[] | undefined) {
+  return (tags ?? []).join(" ");
+}
+
+function readAvailableLibraryTags(assets: Array<{ metadata?: unknown }>) {
+  const counts = new Map<string, number>();
+
+  for (const asset of assets) {
+    for (const tag of readLibraryAssetMetadata(asset).tags ?? []) {
+      const normalized = normalizeLibraryTag(tag);
+      if (!normalized) continue;
+      counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries())
+    .sort((left, right) => {
+      const countDelta = right[1] - left[1];
+      if (countDelta !== 0) return countDelta;
+      return left[0].localeCompare(right[0]);
+    })
+    .map(([tag]) => tag);
+}
+
+function findLastLibraryTagSeparatorIndex(value: string) {
+  return Math.max(
+    value.lastIndexOf(" "),
+    value.lastIndexOf(","),
+    value.lastIndexOf(";"),
+    value.lastIndexOf("\n"),
+    value.lastIndexOf("\t")
+  );
+}
+
+function readActiveLibraryTagQuery(value: string) {
+  const separatorIndex = findLastLibraryTagSeparatorIndex(value);
+  return value.slice(separatorIndex + 1).trim();
+}
+
+function applyLibraryTagSuggestion(value: string, suggestion: string) {
+  const normalizedSuggestion = normalizeLibraryTag(suggestion);
+  if (!normalizedSuggestion) return value;
+
+  const separatorIndex = findLastLibraryTagSeparatorIndex(value);
+  const prefix = separatorIndex >= 0 ? value.slice(0, separatorIndex + 1) : "";
+  const needsSpace = Boolean(prefix) && !/[\s,;]$/.test(prefix);
+
+  return `${prefix}${needsSpace ? " " : ""}${normalizedSuggestion} `;
+}
+
+function readLibraryItemWeight(asset: { metadata?: unknown }) {
+  const raw =
+    asset.metadata && typeof asset.metadata === "object"
+      ? (asset.metadata as Record<string, unknown>).weight
+      : undefined;
+
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function parseLibraryWeightInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+
+  const parsed = Number(trimmed.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatLibraryWeight(value: number | undefined) {
+  return Number.isFinite(value ?? NaN) ? String(value ?? 0) : "0";
 }
 
 function readAssetModule(asset: {
@@ -277,6 +475,59 @@ function buildModulePayload({
   ];
 }
 
+function inferSelectedModulesFromProduct(
+  product: {
+    galleryOnly?: boolean | null;
+    lockSequentialSteps?: boolean | null;
+    steps?: Array<unknown>;
+    assets?: Array<{
+      stepId?: string | null;
+      moduleType?: string | null;
+      placement?: string | null;
+    }>;
+    moduleConfigs?: Array<{
+      moduleType: ProductModuleType;
+      isEnabled: boolean;
+    }>;
+  },
+  enabledTenantModules: Set<ProductModuleType>,
+): Record<ProductModuleType, boolean> {
+  const byType = new Map(
+    (product.moduleConfigs ?? []).map((moduleConfig) => [
+      moduleConfig.moduleType,
+      moduleConfig,
+    ]),
+  );
+
+  if (byType.size > 0) {
+    return {
+      LIBRARY: byType.get("LIBRARY")?.isEnabled ?? false,
+      COURSE: byType.get("COURSE")?.isEnabled ?? false,
+    };
+  }
+
+  const inferred = {
+    LIBRARY:
+      enabledTenantModules.has("LIBRARY") &&
+      (!(product.galleryOnly ?? false) ||
+        (product.assets ?? []).some((asset) => readAssetModule(asset) === "LIBRARY")),
+    COURSE:
+      enabledTenantModules.has("COURSE") &&
+      (Boolean(product.lockSequentialSteps) ||
+        (product.steps?.length ?? 0) > 0 ||
+        (product.assets ?? []).some((asset) => readAssetModule(asset) === "COURSE")),
+  };
+
+  if (inferred.LIBRARY || inferred.COURSE) {
+    return inferred;
+  }
+
+  return {
+    LIBRARY: enabledTenantModules.has("LIBRARY"),
+    COURSE: enabledTenantModules.has("COURSE"),
+  };
+}
+
 export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const router = useRouter();
   const utils = api.useUtils();
@@ -310,10 +561,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
       setNewStepTitle("");
       setNewStepDescription("");
       setStepQuestionnaireEnabled(false);
-      setStepQuestionPrompt("");
-      setStepQuestionOptions(["", "", "", ""]);
-      setStepQuestionCorrectIndex(0);
+      setStepQuestionnaireQuestions([createQuestion(0)]);
+      setStepQuestionPassingScore(1);
       setStepQuestionSuccessMessage("");
+      setStepQuestionFailureMessage("");
       setSelectedStepId(createdStep.id);
       if (!productId) return;
       await utils.products.byId.invalidate({ productId });
@@ -348,6 +599,8 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
       setGalleryAssetShowViews(true);
       setGalleryAssetShowDownloads(true);
       setGalleryAssetShowLikes(true);
+      setGalleryAssetTagsInput("");
+      setGalleryAssetWeightInput("0");
       if (!productId) return;
       await utils.products.byId.invalidate({ productId });
     },
@@ -391,10 +644,12 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const [stepRequired, setStepRequired] = useState(true);
   const [stepLocked, setStepLocked] = useState(false);
   const [stepQuestionnaireEnabled, setStepQuestionnaireEnabled] = useState(false);
-  const [stepQuestionPrompt, setStepQuestionPrompt] = useState("");
-  const [stepQuestionOptions, setStepQuestionOptions] = useState<string[]>(["", "", "", ""]);
-  const [stepQuestionCorrectIndex, setStepQuestionCorrectIndex] = useState(0);
+  const [stepQuestionnaireQuestions, setStepQuestionnaireQuestions] = useState<
+    StepQuestionnaireQuestion[]
+  >(() => [createQuestion(0)]);
+  const [stepQuestionPassingScore, setStepQuestionPassingScore] = useState(1);
   const [stepQuestionSuccessMessage, setStepQuestionSuccessMessage] = useState("");
+  const [stepQuestionFailureMessage, setStepQuestionFailureMessage] = useState("");
 
   const [courseAssetTitle, setCourseAssetTitle] = useState("");
   const [courseAssetUrl, setCourseAssetUrl] = useState("");
@@ -419,11 +674,28 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const [galleryAssetShowViews, setGalleryAssetShowViews] = useState(true);
   const [galleryAssetShowDownloads, setGalleryAssetShowDownloads] = useState(true);
   const [galleryAssetShowLikes, setGalleryAssetShowLikes] = useState(true);
+  const [galleryAssetTagsInput, setGalleryAssetTagsInput] = useState("");
+  const [isGalleryTagsInputFocused, setIsGalleryTagsInputFocused] = useState(false);
+  const [galleryAssetWeightInput, setGalleryAssetWeightInput] = useState("0");
   const [libraryUploadError, setLibraryUploadError] = useState("");
   const [isLibraryUploadPending, setIsLibraryUploadPending] = useState(false);
   const libraryFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const product = productQuery.data;
+  const enabledTenantModules = useMemo(
+    () => {
+      if (!tenantModuleCatalogQuery.data) {
+        return new Set(ALL_PRODUCT_MODULES);
+      }
+
+      return new Set(
+        tenantModuleCatalogQuery.data
+          .filter((moduleEntry) => moduleEntry.isEnabled)
+          .map((moduleEntry) => moduleEntry.moduleType as ProductModuleType)
+      );
+    },
+    [tenantModuleCatalogQuery.data]
+  );
 
   useEffect(() => {
     if (!product) return;
@@ -443,10 +715,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
       ])
     );
 
-    setSelectedModules({
-      LIBRARY: byType.get("LIBRARY")?.isEnabled ?? false,
-      COURSE: byType.get("COURSE")?.isEnabled ?? false,
-    });
+    setSelectedModules(inferSelectedModulesFromProduct(product, enabledTenantModules));
     setLibraryAllowDownloads(
       Boolean(
         (byType.get("LIBRARY")?.settings as { allowDownloads?: boolean } | null)
@@ -454,17 +723,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
       )
     );
     setCourseLockSequential(product.lockSequentialSteps);
-  }, [product]);
-
-  const enabledTenantModules = useMemo(
-    () =>
-      new Set(
-        (tenantModuleCatalogQuery.data ?? [])
-          .filter((moduleEntry) => moduleEntry.isEnabled)
-          .map((moduleEntry) => moduleEntry.moduleType as ProductModuleType)
-      ),
-    [tenantModuleCatalogQuery.data]
-  );
+  }, [enabledTenantModules, product]);
   const tenantPolicy = currentTenantQuery.data?.policy;
   const tenantUsage = currentTenantQuery.data?.usage;
   const allowedProductTypes = useMemo(
@@ -563,17 +822,14 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     setStepRequired(selectedCourseStep.isRequired);
     setStepLocked(selectedCourseStep.lockUntilComplete);
     setStepQuestionnaireEnabled(Boolean(questionnaire));
-    setStepQuestionPrompt(questionnaire?.prompt ?? "");
-    setStepQuestionOptions(normalizeQuestionnaireOptions(questionnaire?.options));
-    setStepQuestionCorrectIndex(
-      Math.max(
-        0,
-        questionnaire?.options.findIndex(
-          (option) => option.id === questionnaire.correctOptionId,
-        ) ?? 0,
-      ),
+    setStepQuestionnaireQuestions(
+      normalizeQuestionnaireQuestions(questionnaire?.questions),
+    );
+    setStepQuestionPassingScore(
+      clampPassingScore(questionnaire?.passingScore, questionnaire?.questions.length ?? 1),
     );
     setStepQuestionSuccessMessage(questionnaire?.successMessage ?? "");
+    setStepQuestionFailureMessage(questionnaire?.failureMessage ?? "");
   }, [selectedCourseStep]);
 
   useEffect(() => {
@@ -586,7 +842,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     () =>
       allAssets
         .filter((asset) => readAssetModule(asset) === "LIBRARY")
-        .sort((a, b) => a.sortOrder - b.sortOrder),
+        .sort((a, b) => {
+          const weightDelta = readLibraryItemWeight(b) - readLibraryItemWeight(a);
+          if (weightDelta !== 0) return weightDelta;
+          return a.sortOrder - b.sortOrder;
+        }),
     [allAssets]
   );
   const courseAssets = useMemo(
@@ -614,15 +874,162 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const parsedPriceCents = useMemo(() => parsePriceInputToCents(priceInput), [priceInput]);
   const isPriceValid =
     isFreeProduct || (parsedPriceCents !== null && parsedPriceCents > 0 && Boolean(normalizedCurrency));
-  const enabledQuestionOptions = useMemo(
-    () => stepQuestionOptions.map((option) => option.trim()).filter(Boolean),
-    [stepQuestionOptions],
+  const parsedGalleryTags = useMemo(
+    () => parseLibraryTagsInput(galleryAssetTagsInput),
+    [galleryAssetTagsInput]
+  );
+  const availableGalleryTags = useMemo(
+    () => readAvailableLibraryTags(galleryAssets),
+    [galleryAssets]
+  );
+  const activeGalleryTagQuery = useMemo(
+    () => readActiveLibraryTagQuery(galleryAssetTagsInput),
+    [galleryAssetTagsInput]
+  );
+  const galleryTagSuggestions = useMemo(() => {
+    const normalizedQuery = activeGalleryTagQuery
+      ? normalizeLibraryTag(activeGalleryTagQuery)
+      : null;
+    const selectedTags = new Set(parsedGalleryTags);
+
+    return availableGalleryTags
+      .filter((tag) => {
+        if (selectedTags.has(tag)) return false;
+        if (!normalizedQuery) return true;
+        return tag.startsWith(normalizedQuery);
+      })
+      .slice(0, 8);
+  }, [activeGalleryTagQuery, availableGalleryTags, parsedGalleryTags]);
+  const parsedGalleryWeight = useMemo(
+    () => parseLibraryWeightInput(galleryAssetWeightInput),
+    [galleryAssetWeightInput]
+  );
+  const galleryEditorPreviewAsset = useMemo<InitialAssetData & LibraryAssetCardAsset>(
+    () => ({
+      id: selectedGalleryAsset?.id ?? "library-editor-preview",
+      productId: product?.id ?? productId ?? "library-editor-preview",
+      title: galleryAssetTitle,
+      description: galleryAssetDescription,
+      url: galleryAssetUrl,
+      type: galleryAssetType,
+      targetUrl: galleryAssetTargetUrl,
+      openInNewTab: galleryAssetOpenInNewTab,
+      isDownloadable: galleryAssetDownloadable,
+      showViews: galleryAssetShowViews,
+      showDownloads: galleryAssetShowDownloads,
+      showLikes: galleryAssetShowLikes,
+      tags: parsedGalleryTags,
+      previewUrl:
+        selectedGalleryAsset &&
+        typeof selectedGalleryAsset.previewUrl === "string" &&
+        selectedGalleryAsset.previewUrl.trim()
+          ? selectedGalleryAsset.previewUrl
+          : null,
+      thumbnailUrl:
+        selectedGalleryAsset &&
+        typeof selectedGalleryAsset.thumbnailUrl === "string" &&
+        selectedGalleryAsset.thumbnailUrl.trim()
+          ? selectedGalleryAsset.thumbnailUrl
+          : null,
+      metadata: {
+        showViews: galleryAssetShowViews,
+        showDownloads: galleryAssetShowDownloads,
+        showLikes: galleryAssetShowLikes,
+        tags: parsedGalleryTags,
+      },
+      stats: {
+        likes: 0,
+        views: 0,
+        downloads: 0,
+      },
+      currentUserLiked: false,
+    }),
+    [
+      product?.id,
+      productId,
+      galleryAssetDescription,
+      galleryAssetDownloadable,
+      galleryAssetOpenInNewTab,
+      galleryAssetShowDownloads,
+      galleryAssetShowLikes,
+      galleryAssetShowViews,
+      galleryAssetTargetUrl,
+      galleryAssetTitle,
+      galleryAssetType,
+      galleryAssetUrl,
+      parsedGalleryTags,
+      selectedGalleryAsset,
+    ]
   );
   const isStepQuestionnaireValid =
     !stepQuestionnaireEnabled ||
-    (Boolean(stepQuestionPrompt.trim()) &&
-      enabledQuestionOptions.length >= 2 &&
-      Boolean(stepQuestionOptions[stepQuestionCorrectIndex]?.trim()));
+    (stepQuestionnaireQuestions.length > 0 &&
+      stepQuestionnaireQuestions.every((question) => {
+        const filledOptions = question.options
+          .map((option) => option.label.trim())
+          .filter(Boolean);
+
+        return (
+          Boolean(question.prompt.trim()) &&
+          filledOptions.length >= 2 &&
+          question.options.some((option) => option.id === question.correctOptionId)
+        );
+      }) &&
+      stepQuestionPassingScore >= 1 &&
+      stepQuestionPassingScore <= stepQuestionnaireQuestions.length);
+
+  function updateQuestion(index: number, nextQuestion: StepQuestionnaireQuestion) {
+    setStepQuestionnaireQuestions((current) =>
+      current.map((question, questionIndex) =>
+        questionIndex === index ? nextQuestion : question,
+      ),
+    );
+  }
+
+  function addQuestion() {
+    setStepQuestionnaireQuestions((current) => [...current, createQuestion(current.length)]);
+    setStepQuestionPassingScore((current) => Math.max(1, current));
+  }
+
+  function removeQuestion(index: number) {
+    setStepQuestionnaireQuestions((current) => {
+      const nextQuestions = current.filter((_, questionIndex) => questionIndex !== index);
+      return nextQuestions.length ? nextQuestions : [createQuestion(0)];
+    });
+  }
+
+  function addQuestionOption(questionIndex: number) {
+    const question = stepQuestionnaireQuestions[questionIndex];
+    if (!question) return;
+
+    updateQuestion(questionIndex, {
+      ...question,
+      options: [...question.options, createQuestionOption(question.options.length)],
+    });
+  }
+
+  function removeQuestionOption(questionIndex: number, optionId: string) {
+    const question = stepQuestionnaireQuestions[questionIndex];
+    if (!question || question.options.length <= 2) return;
+
+    const nextOptions = question.options.filter((option) => option.id !== optionId);
+    updateQuestion(questionIndex, {
+      ...question,
+      options: nextOptions,
+      correctOptionId: nextOptions.some((option) => option.id === question.correctOptionId)
+        ? question.correctOptionId
+        : nextOptions[0]?.id,
+    });
+  }
+
+  useEffect(() => {
+    setStepQuestionPassingScore((current) =>
+      Math.min(
+        Math.max(1, current),
+        Math.max(1, stepQuestionnaireQuestions.length),
+      ),
+    );
+  }, [stepQuestionnaireQuestions.length]);
 
   useEffect(() => {
     setLibraryUploadError("");
@@ -641,6 +1048,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
       setGalleryAssetShowViews(metadata.showViews ?? true);
       setGalleryAssetShowDownloads(metadata.showDownloads ?? true);
       setGalleryAssetShowLikes(metadata.showLikes ?? true);
+      setGalleryAssetTagsInput(formatLibraryTags(metadata.tags));
+      setGalleryAssetWeightInput(
+        formatLibraryWeight(readLibraryItemWeight(selectedGalleryAsset))
+      );
       return;
     }
     setGalleryAssetTitle("");
@@ -653,6 +1064,8 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     setGalleryAssetShowViews(true);
     setGalleryAssetShowDownloads(true);
     setGalleryAssetShowLikes(true);
+    setGalleryAssetTagsInput("");
+    setGalleryAssetWeightInput("0");
   }, [selectedGalleryAsset]);
 
   async function handleLibraryFileUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -694,6 +1107,8 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
               showViews: galleryAssetShowViews,
               showDownloads: galleryAssetShowDownloads,
               showLikes: galleryAssetShowLikes,
+              tags: parsedGalleryTags,
+              weight: 0,
             },
             sortOrder: galleryAssets.length + index + 1,
           });
@@ -886,87 +1301,92 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     });
   }
 
-  return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.12),_transparent_28%),linear-gradient(180deg,_#060913_0%,_#02040b_100%)] px-4 py-8 text-white md:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-3xl border border-white/10 bg-black/30 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-3">
-              <Link
-                href="/admin/dashboard/products"
-                className="inline-flex items-center gap-2 text-sm text-zinc-400 transition hover:text-white"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to products
-              </Link>
-              <div>
-                <p className="text-xs uppercase tracking-[0.28em] text-zinc-500">
-                  {isEditMode ? "Product editor" : "Create product"}
-                </p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white md:text-4xl">
-                  {isEditMode ? product?.name ?? "Loading product..." : "New product"}
-                </h1>
-                <p className="mt-2 max-w-2xl text-sm text-zinc-400 md:text-base">
-                  Plugins are the actual building blocks of the product. Enable them first,
-                  then edit each one in its own workspace.
-                </p>
-              </div>
-            </div>
+  const productTypeLabel =
+    PRODUCT_TYPES.find(([value]) => value === productType)?.[1] ?? productType;
+  const activeModuleCount = Object.values(selectedModules).filter(Boolean).length;
 
-            <Button
-              className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
-              disabled={
-                !title.trim() ||
-                !isPriceValid ||
-                productDraftBlocked ||
-                createProductMutation.isPending ||
-                updateProductMutation.isPending
-              }
-              onClick={() => void handleSaveProduct()}
+  return (
+    <AdminShell
+      title={isEditMode ? product?.name ?? "Loading product..." : "New product"}
+      description="Define pricing, enable modules, and manage the course or library experience in one workspace."
+      actions={
+        <Button
+          className="h-10 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
+          disabled={
+            !title.trim() ||
+            !isPriceValid ||
+            productDraftBlocked ||
+            createProductMutation.isPending ||
+            updateProductMutation.isPending
+          }
+          onClick={() => void handleSaveProduct()}
+        >
+          {isEditMode ? "Save product" : "Create and continue"}
+        </Button>
+      }
+    >
+      <div className="space-y-5">
+        <div className="flex flex-col gap-3 rounded-[10px] border border-[#2e2b26] bg-[#1b1916] px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Link
+              href="/admin/dashboard/products"
+              className="inline-flex items-center gap-2 text-[#9f9789] transition hover:text-[#f4efe5]"
             >
-              {isEditMode ? "Save product" : "Create and continue"}
-            </Button>
+              <ArrowLeft className="h-4 w-4" />
+              Back to products
+            </Link>
+            <span className="inline-flex items-center rounded-md border border-[#34312b] bg-[#1a1814] px-2.5 py-1 text-xs font-medium text-[#bdb5a7]">
+              {isEditMode ? product?.status ?? "Draft" : "New draft"}
+            </span>
+            <span className="inline-flex items-center rounded-md border border-[#4b412f] bg-[#241f18] px-2.5 py-1 text-xs font-medium text-[#d7c29f]">
+              {productTypeLabel}
+            </span>
           </div>
-        </section>
+          <p className="text-sm text-[#9f9789]">
+            {activeModuleCount > 0
+              ? `${activeModuleCount} active module${activeModuleCount === 1 ? "" : "s"}`
+              : "Enable at least one module to start building"}
+          </p>
+        </div>
 
         <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           {productDraftBlocked ? (
-            <div className="rounded-3xl border border-amber-400/20 bg-amber-500/10 px-5 py-4 text-sm text-amber-100 xl:col-span-2">
+            <div className="rounded-[12px] border border-[#51422b] bg-[#2a2114] px-5 py-4 text-sm text-[#dfc28e] xl:col-span-2">
               {productLimitReached
                 ? "This tenant is at its configured product limit. Archive an existing product or ask a global admin to raise the cap."
                 : "Some product settings are blocked by the current tenant policy. Adjust the disabled options before saving."}
             </div>
           ) : null}
-          <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+          <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
             <div className="mb-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+              <p className="text-xs font-medium text-[#9f9789]">
                 Product basics
               </p>
-              <h2 className="mt-1 text-xl font-semibold text-white">
+              <h2 className="mt-1 text-xl font-semibold text-[#f4efe5]">
                 Identity and structure
               </h2>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
               <input
-                className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                className="h-11 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
                 placeholder="Product title"
               />
               <input
-                className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                className="h-11 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                 value={subtitle}
                 onChange={(event) => setSubtitle(event.target.value)}
                 placeholder="Subtitle"
               />
               <textarea
-                className="h-28 rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-sky-400/50 md:col-span-2"
+                className="h-28 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56] md:col-span-2"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="Describe the promise of this product"
               />
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4 md:col-span-2">
+              <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4 md:col-span-2">
                 <div className="flex flex-wrap gap-2">
                   {([
                     ["FREE", "Free access", "Anyone with the page can open this product."],
@@ -980,37 +1400,37 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                         setPricingMode(value);
                       }}
                       disabled={value === "PAID" && !paidProductsAllowed}
-                      className={`flex-1 rounded-2xl border px-4 py-3 text-left transition ${
+                      className={`flex-1 rounded-[10px] border px-4 py-3 text-left transition ${
                         pricingMode === value
-                          ? "border-emerald-400/50 bg-emerald-400/10 text-white"
-                          : "border-white/10 bg-black/30 text-zinc-300 hover:bg-white/5"
+                          ? "border-[#4b412f] bg-[#241f18] text-[#f4efe5]"
+                          : "border-[#37332d] bg-[#11100d] text-[#c1b9ab] hover:bg-[#1d1b17]"
                       }`}
                     >
                       <p className="text-sm font-semibold">{label}</p>
-                      <p className="mt-1 text-xs text-zinc-400">{copy}</p>
+                      <p className="mt-1 text-xs text-[#9f9789]">{copy}</p>
                     </button>
                   ))}
                 </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-[160px_1fr]">
-                  <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
+                  <label className="grid gap-2 text-xs font-medium text-[#9f9789]">
                     Currency
                     <input
-                      className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm tracking-[0.24em] text-white outline-none transition focus:border-sky-400/50"
+                      className="h-11 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm tracking-[0.24em] text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                       value={currency}
                       onChange={(event) => setCurrency(event.target.value.slice(0, 8))}
                       placeholder={DEFAULT_PRODUCT_CURRENCY}
                       maxLength={8}
                     />
                   </label>
-                  <label className="grid gap-2 text-xs uppercase tracking-[0.18em] text-zinc-500">
+                  <label className="grid gap-2 text-xs font-medium text-[#9f9789]">
                     Price
                     <input
-                      className={`h-11 rounded-xl border bg-black/30 px-3 text-sm text-white outline-none transition ${
+                      className={`h-11 rounded-[10px] border bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition ${
                         isFreeProduct
-                          ? "border-white/10 opacity-50"
+                          ? "border-[#37332d] opacity-50"
                           : parsedPriceCents !== null && parsedPriceCents > 0
-                            ? "border-white/10 focus:border-sky-400/50"
+                            ? "border-[#37332d] focus:border-[#8d7a56]"
                             : "border-rose-400/40 focus:border-rose-400/60"
                       }`}
                       value={priceInput}
@@ -1023,7 +1443,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm">
-                  <p className="text-zinc-400">
+                  <p className="text-[#9f9789]">
                     {isFreeProduct
                       ? "Free products stay open to access."
                       : "Paid products require a positive price."}
@@ -1043,10 +1463,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       setProductType(value);
                     }}
                     disabled={!allowedProductTypes.has(value)}
-                    className={`h-11 rounded-xl border px-3 text-sm font-medium transition ${
+                    className={`h-11 rounded-[10px] border px-3 text-sm font-medium transition ${
                       productType === value
-                        ? "border-sky-400/50 bg-sky-400/15 text-white"
-                        : "border-white/10 bg-black/30 text-zinc-300 hover:bg-white/5"
+                        ? "border-[#4b412f] bg-[#241f18] text-[#f4efe5]"
+                        : "border-[#37332d] bg-[#11100d] text-[#c1b9ab] hover:bg-[#1d1b17]"
                     }`}
                   >
                     {label}
@@ -1056,18 +1476,16 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+          <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
             <div className="mb-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                Product plugins
-              </p>
-              <h2 className="mt-1 text-xl font-semibold text-white">
-                Enable what this product can use
+              <p className="text-xs font-medium text-[#9f9789]">Modules</p>
+              <h2 className="mt-1 text-xl font-semibold text-[#f4efe5]">
+                Enable what this product includes
               </h2>
             </div>
 
             <div className="space-y-3">
-              {(["LIBRARY", "COURSE"] as ProductModuleType[]).map(
+              {ALL_PRODUCT_MODULES.map(
                 (moduleType) => {
                   const config = MODULE_COPY[moduleType];
                   const tenantEnabled = enabledTenantModules.has(moduleType);
@@ -1075,10 +1493,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                   return (
                     <label
                       key={moduleType}
-                      className={`flex items-start gap-3 rounded-2xl border p-4 ${
+                      className={`flex items-start gap-3 rounded-[10px] border p-4 ${
                         tenantEnabled
-                          ? "border-white/10 bg-black/30"
-                          : "border-white/5 bg-black/15 opacity-50"
+                          ? "border-[#37332d] bg-[#11100d]"
+                          : "border-[#2a2823] bg-[#141310] opacity-50"
                       }`}
                     >
                       <input
@@ -1095,12 +1513,12 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       />
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <Icon className="h-4 w-4 text-sky-300" />
-                          <span className="text-sm font-semibold text-white">
+                          <Icon className="h-4 w-4 text-[#d7c29f]" />
+                          <span className="text-sm font-semibold text-[#f4efe5]">
                             {config.label}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-zinc-400">{config.description}</p>
+                        <p className="mt-1 text-xs text-[#9f9789]">{config.description}</p>
                       </div>
                     </label>
                   );
@@ -1108,8 +1526,8 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
               )}
             </div>
 
-            <div className="mt-4 space-y-2 border-t border-white/10 pt-4">
-              <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+            <div className="mt-4 space-y-2 border-t border-[#2a2823] pt-4">
+              <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                 <input
                   type="checkbox"
                   checked={libraryAllowDownloads}
@@ -1118,7 +1536,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                 />
                 Library items can be marked as downloadable
               </label>
-              <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+              <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                 <input
                   type="checkbox"
                   checked={courseLockSequential}
@@ -1128,7 +1546,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                 Course steps unlock sequentially
               </label>
               {!isEditMode ? (
-                <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                   <input
                     type="checkbox"
                     checked={createDemoCourseContent}
@@ -1153,10 +1571,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                     key={pluginType}
                     type="button"
                     onClick={() => setSelectedPlugin(pluginType)}
-                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition ${
+                    className={`inline-flex items-center gap-2 rounded-md border px-4 py-2 text-sm transition ${
                       selectedPlugin === pluginType
-                        ? "border-sky-400/50 bg-sky-400/15 text-white"
-                        : "border-white/10 bg-black/30 text-zinc-300 hover:bg-white/5"
+                        ? "border-[#4b412f] bg-[#241f18] text-[#f4efe5]"
+                        : "border-[#37332d] bg-[#11100d] text-[#c1b9ab] hover:bg-[#1d1b17]"
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -1167,7 +1585,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
             </div>
 
             {!activePlugins.length ? (
-              <div className="rounded-3xl border border-dashed border-white/10 bg-black/20 p-10 text-center text-zinc-500">
+              <div className="rounded-[12px] border border-dashed border-[#302d28] bg-[#151411] p-10 text-center text-[#7f786b]">
                 Enable at least one plugin to start building the product.
               </div>
             ) : null}
@@ -1175,26 +1593,26 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
             {selectedPlugin === "COURSE" ? (
               <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
                 <div className="space-y-4">
-                  <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+                  <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                     <div className="mb-4 flex items-center gap-2">
-                      <PackagePlus className="h-4 w-4 text-fuchsia-300" />
-                      <h3 className="text-lg font-semibold text-white">Add course step</h3>
+                      <PackagePlus className="h-4 w-4 text-[#d7c29f]" />
+                      <h3 className="text-lg font-semibold text-[#f4efe5]">Add course step</h3>
                     </div>
                     <div className="space-y-3">
                       <input
-                        className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-fuchsia-400/50"
+                        className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                         value={newStepTitle}
                         onChange={(event) => setNewStepTitle(event.target.value)}
                         placeholder="Step title"
                       />
                       <textarea
-                        className="h-24 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-fuchsia-400/50"
+                        className="h-24 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                         value={newStepDescription}
                         onChange={(event) => setNewStepDescription(event.target.value)}
                         placeholder="Short step description"
                       />
                       <Button
-                        className="h-11 w-full rounded-xl border-fuchsia-500/30 bg-fuchsia-500 text-sm font-semibold text-black hover:bg-fuchsia-400 disabled:opacity-50"
+                        className="h-11 w-full rounded-[10px] border border-[#4b412f] bg-[#8d7a56] text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                         disabled={!newStepTitle.trim() || createStepMutation.isPending}
                         onClick={() =>
                           createStepMutation.mutate({
@@ -1218,11 +1636,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+                  <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                     <div className="mb-4">
-                      <h3 className="text-lg font-semibold text-white">Course steps</h3>
-                      <p className="mt-1 text-xs text-zinc-400">
-                        Select a step to edit its post-style content and assets.
+                      <h3 className="text-lg font-semibold text-[#f4efe5]">Course steps</h3>
+                      <p className="mt-1 text-xs text-[#9f9789]">
+                        Select a step to edit its content and assets.
                       </p>
                     </div>
                     <div className="space-y-2">
@@ -1231,23 +1649,23 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                           key={step.id}
                           type="button"
                           onClick={() => setSelectedStepId(step.id)}
-                          className={`w-full rounded-2xl border p-3 text-left transition ${
+                          className={`w-full rounded-[10px] border p-3 text-left transition ${
                             selectedStepId === step.id
-                              ? "border-emerald-400/50 bg-emerald-400/10"
-                              : "border-white/10 bg-black/30 hover:bg-white/5"
+                              ? "border-[#4b412f] bg-[#241f18]"
+                              : "border-[#37332d] bg-[#11100d] hover:bg-[#1d1b17]"
                           }`}
                         >
-                          <p className="text-[11px] uppercase tracking-wide text-zinc-500">
+                          <p className="text-xs font-medium text-[#9f9789]">
                             Step {index + 1}
                           </p>
-                          <p className="mt-1 text-sm font-semibold text-white">{step.title}</p>
-                          <p className="mt-1 line-clamp-2 text-xs text-zinc-400">
+                          <p className="mt-1 text-sm font-semibold text-[#f4efe5]">{step.title}</p>
+                          <p className="mt-1 line-clamp-2 text-xs text-[#9f9789]">
                             {step.description || "No description yet."}
                           </p>
                         </button>
                       ))}
                       {!courseSteps.length ? (
-                        <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-zinc-500">
+                        <div className="rounded-[10px] border border-dashed border-[#302d28] bg-[#151411] p-4 text-sm text-[#7f786b]">
                           No course steps yet.
                         </div>
                       ) : null}
@@ -1272,18 +1690,18 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                         className="hidden"
                         onChange={(event) => void handleCourseFileUpload(event)}
                       />
-                      <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+                      <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                           <div>
-                            <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                            <p className="text-xs font-medium text-[#9f9789]">
                               Step editor
                             </p>
-                            <h3 className="mt-1 text-xl font-semibold text-white">
+                            <h3 className="mt-1 text-xl font-semibold text-[#f4efe5]">
                               {selectedCourseStep.title}
                             </h3>
                           </div>
                           <Button
-                            className="h-10 rounded-xl border-red-500/30 bg-red-500/80 px-4 text-xs font-semibold text-black hover:bg-red-400 disabled:opacity-50"
+                            className="h-10 rounded-[10px] border border-[#553531] bg-[#4a2b28] px-4 text-xs font-semibold text-[#15130f] hover:bg-[#5a3330] disabled:opacity-50"
                             disabled={removeStepMutation.isPending}
                             onClick={() =>
                               removeStepMutation.mutate({ stepId: selectedCourseStep.id })
@@ -1297,30 +1715,30 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                         <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
                           <div className="space-y-3">
                             <input
-                              className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                              className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                               value={stepTitle}
                               onChange={(event) => setStepTitle(event.target.value)}
                               placeholder="Step title"
                             />
                             <textarea
-                              className="h-24 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                              className="h-24 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                               value={stepDescription}
                               onChange={(event) => setStepDescription(event.target.value)}
                               placeholder="Step description"
                             />
-                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                            <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-3">
                               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
-                                  <p className="text-sm font-medium text-white">
+                                  <p className="text-sm font-medium text-[#f4efe5]">
                                     Upload step background
                                   </p>
-                                  <p className="mt-1 text-xs text-zinc-400">
+                                  <p className="mt-1 text-xs text-[#9f9789]">
                                     Upload an image and we&apos;ll fill the background URL below.
                                     Save the step after uploading to persist it.
                                   </p>
                                 </div>
                                 <Button
-                                  className="h-10 rounded-xl border-white/10 bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/15 disabled:opacity-50"
+                                  className="h-10 rounded-[10px] border border-[#37332d] bg-[#1b1916] px-4 text-xs font-semibold text-[#f4efe5] hover:bg-[#23201c] disabled:opacity-50"
                                   disabled={
                                     !productId ||
                                     !selectedCourseStep ||
@@ -1338,19 +1756,19 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                               ) : null}
                             </div>
                             <input
-                              className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                              className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                               value={stepCoverImageUrl}
                               onChange={(event) => setStepCoverImageUrl(event.target.value)}
                               placeholder="Background image URL"
                             />
                             <textarea
-                              className="h-56 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                              className="h-56 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                               value={stepBody}
                               onChange={(event) => setStepBody(event.target.value)}
                               placeholder="Long form content for the step. Treat this like a rich article body for now."
                             />
                             <div className="grid gap-2 sm:grid-cols-2">
-                              <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                              <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                                 <input
                                   type="checkbox"
                                   checked={stepRequired}
@@ -1358,7 +1776,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                 />
                                 Required step
                               </label>
-                              <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                              <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                                 <input
                                   type="checkbox"
                                   checked={stepLocked}
@@ -1367,18 +1785,18 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                 Locked until complete
                               </label>
                             </div>
-                            <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+                            <div className="rounded-[12px] border border-[#302d28] bg-[#151411] p-4">
                               <div className="flex items-center justify-between gap-3">
                                 <div>
-                                  <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                                  <p className="text-xs font-medium text-[#9f9789]">
                                     Completion questionnaire
                                   </p>
-                                  <p className="mt-1 text-sm text-zinc-400">
+                                  <p className="mt-1 text-sm text-[#9f9789]">
                                     Add one quick multiple-choice question before this step can be
                                     marked complete.
                                   </p>
                                 </div>
-                                <label className="flex items-center gap-2 text-sm text-zinc-300">
+                                <label className="flex items-center gap-2 text-sm text-[#c1b9ab]">
                                   <input
                                     type="checkbox"
                                     checked={stepQuestionnaireEnabled}
@@ -1391,68 +1809,180 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                               </div>
 
                               {stepQuestionnaireEnabled ? (
-                                <div className="mt-4 space-y-3">
-                                  <textarea
-                                    className="h-24 w-full rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
-                                    value={stepQuestionPrompt}
-                                    onChange={(event) => setStepQuestionPrompt(event.target.value)}
-                                    placeholder="Ask a small completion question"
-                                  />
-                                  <div className="grid gap-2 sm:grid-cols-2">
-                                    {stepQuestionOptions.map((option, index) => (
-                                      <input
-                                        key={STEP_QUESTION_OPTION_IDS[index]}
-                                        className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
-                                        value={option}
-                                        onChange={(event) =>
-                                          setStepQuestionOptions((current) =>
-                                            current.map((entry, entryIndex) =>
-                                              entryIndex === index ? event.target.value : entry,
-                                            ),
-                                          )
-                                        }
-                                        placeholder={`Option ${index + 1}`}
-                                      />
+                                <div className="mt-4 space-y-4">
+                                  <div className="space-y-3">
+                                    {stepQuestionnaireQuestions.map((question, questionIndex) => (
+                                      <div
+                                        key={`${question.id}-${questionIndex}`}
+                                        className="rounded-[10px] border border-[#2e2b26] bg-[#1b1916] p-4"
+                                      >
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div>
+                                            <p className="text-xs font-medium text-[#9f9789]">
+                                              Question {questionIndex + 1}
+                                            </p>
+                                            <p className="mt-1 text-sm text-[#9f9789]">
+                                              Add the question and its answer choices.
+                                            </p>
+                                          </div>
+                                          {stepQuestionnaireQuestions.length > 1 ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => removeQuestion(questionIndex)}
+                                              className="inline-flex h-9 items-center justify-center rounded-[10px] border border-red-500/30 px-3 text-xs font-semibold text-[#e2a8a1] transition hover:bg-red-500/10"
+                                            >
+                                              Remove
+                                            </button>
+                                          ) : null}
+                                        </div>
+
+                                        <textarea
+                                          className="mt-4 h-24 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
+                                          value={question.prompt}
+                                          onChange={(event) =>
+                                            updateQuestion(questionIndex, {
+                                              ...question,
+                                              prompt: event.target.value,
+                                            })
+                                          }
+                                          placeholder={`Write question ${questionIndex + 1}`}
+                                        />
+
+                                        <div className="mt-4 space-y-2">
+                                          {question.options.map((option, optionIndex) => (
+                                            <div
+                                              key={option.id}
+                                              className="flex items-center gap-2"
+                                            >
+                                              <input
+                                                className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
+                                                value={option.label}
+                                                onChange={(event) =>
+                                                  updateQuestion(questionIndex, {
+                                                    ...question,
+                                                    options: question.options.map((entry) =>
+                                                      entry.id === option.id
+                                                        ? {
+                                                            ...entry,
+                                                            label: event.target.value,
+                                                          }
+                                                        : entry,
+                                                    ),
+                                                  })
+                                                }
+                                                placeholder={`Answer ${optionIndex + 1}`}
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  removeQuestionOption(
+                                                    questionIndex,
+                                                    option.id,
+                                                  )
+                                                }
+                                                disabled={question.options.length <= 2}
+                                                className="inline-flex h-11 items-center justify-center rounded-[10px] border border-[#37332d] px-3 text-xs font-semibold text-[#c1b9ab] transition hover:bg-[#1d1b17] disabled:cursor-not-allowed disabled:opacity-40"
+                                              >
+                                                Remove
+                                              </button>
+                                            </div>
+                                          ))}
+                                        </div>
+
+                                        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+                                          <Button
+                                            type="button"
+                                            className="h-11 rounded-[10px] border border-[#37332d] bg-[#1b1916] px-4 text-sm font-semibold text-[#f4efe5] hover:bg-[#23201c]"
+                                            onClick={() => addQuestionOption(questionIndex)}
+                                          >
+                                            <Plus className="mr-2 h-4 w-4" />
+                                            Add answer
+                                          </Button>
+                                          <label className="grid gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
+                                            <span className="text-xs font-medium text-[#9f9789]">
+                                              Correct answer
+                                            </span>
+                                            <select
+                                              className="h-11 rounded-[10px] border border-[#37332d] bg-[#141310] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
+                                              value={
+                                                question.correctOptionId ??
+                                                question.options[0]?.id ??
+                                                ""
+                                              }
+                                              onChange={(event) =>
+                                                updateQuestion(questionIndex, {
+                                                  ...question,
+                                                  correctOptionId: event.target.value,
+                                                })
+                                              }
+                                            >
+                                              {question.options.map((option, optionIndex) => (
+                                                <option key={option.id} value={option.id}>
+                                                  Answer {optionIndex + 1}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </label>
+                                        </div>
+                                      </div>
                                     ))}
                                   </div>
-                                  <div className="grid gap-3 sm:grid-cols-2">
-                                    <label className="grid gap-2 rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
-                                      <span className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                                        Correct answer
+
+                                  <Button
+                                    type="button"
+                                    className="h-11 rounded-[10px] border border-[#37332d] bg-[#1b1916] px-4 text-sm font-semibold text-[#f4efe5] hover:bg-[#23201c]"
+                                    onClick={addQuestion}
+                                  >
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    Add question
+                                  </Button>
+
+                                  <div className="grid gap-3 sm:grid-cols-3">
+                                    <label className="grid gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
+                                      <span className="text-xs font-medium text-[#9f9789]">
+                                        Pass when correct
                                       </span>
-                                      <select
-                                        className="h-11 rounded-xl border border-white/10 bg-black/40 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
-                                        value={String(stepQuestionCorrectIndex)}
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        max={stepQuestionnaireQuestions.length}
+                                        className="h-11 rounded-[10px] border border-[#37332d] bg-[#141310] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
+                                        value={stepQuestionPassingScore}
                                         onChange={(event) =>
-                                          setStepQuestionCorrectIndex(Number(event.target.value))
+                                          setStepQuestionPassingScore(
+                                            Number(event.target.value) || 1,
+                                          )
                                         }
-                                      >
-                                        {stepQuestionOptions.map((_, index) => (
-                                          <option key={STEP_QUESTION_OPTION_IDS[index]} value={index}>
-                                            Option {index + 1}
-                                          </option>
-                                        ))}
-                                      </select>
+                                      />
                                     </label>
                                     <input
-                                      className="h-11 w-full self-end rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
+                                      className="h-11 w-full self-end rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                       value={stepQuestionSuccessMessage}
                                       onChange={(event) =>
                                         setStepQuestionSuccessMessage(event.target.value)
                                       }
-                                      placeholder="Optional success message"
+                                      placeholder="Optional pass message"
+                                    />
+                                    <input
+                                      className="h-11 w-full self-end rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
+                                      value={stepQuestionFailureMessage}
+                                      onChange={(event) =>
+                                        setStepQuestionFailureMessage(event.target.value)
+                                      }
+                                      placeholder="Optional fail message"
                                     />
                                   </div>
                                   {!isStepQuestionnaireValid ? (
                                     <p className="text-xs text-amber-300">
-                                      Add a prompt and at least two filled options before saving.
+                                      Each question needs a prompt, at least two answers, and a
+                                      valid correct answer before saving.
                                     </p>
                                   ) : null}
                                 </div>
                               ) : null}
                             </div>
                             <Button
-                              className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
+                              className="h-11 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                               disabled={
                                 !stepTitle.trim() ||
                                 !isStepQuestionnaireValid ||
@@ -1470,10 +2000,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                     content: stepBody,
                                     questionnaire: buildStepQuestionnaire({
                                       enabled: stepQuestionnaireEnabled,
-                                      prompt: stepQuestionPrompt,
-                                      options: stepQuestionOptions,
-                                      correctIndex: stepQuestionCorrectIndex,
+                                      questions: stepQuestionnaireQuestions,
+                                      passingScore: stepQuestionPassingScore,
                                       successMessage: stepQuestionSuccessMessage,
+                                      failureMessage: stepQuestionFailureMessage,
                                     }),
                                   },
                                 })
@@ -1485,11 +2015,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                           </div>
 
                           <div className="space-y-3">
-                            <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                            <p className="text-xs font-medium text-[#9f9789]">
                               Cover preview
                             </p>
                             <div
-                              className="relative overflow-hidden rounded-3xl border border-white/10 bg-zinc-900/70 p-6"
+                              className="relative overflow-hidden rounded-[12px] border border-[#37332d] bg-[#171613] p-6"
                               style={{
                                 backgroundImage: stepCoverImageUrl
                                   ? `linear-gradient(180deg, rgba(2,6,23,0.35), rgba(2,6,23,0.88)), url(${stepCoverImageUrl})`
@@ -1499,13 +2029,13 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                 minHeight: 240,
                               }}
                             >
-                              <p className="text-xs uppercase tracking-[0.22em] text-emerald-200/80">
-                                Step hero
+                              <p className="text-xs font-medium text-[#d7c29f]">
+                                Step preview
                               </p>
-                              <h4 className="mt-3 text-2xl font-semibold text-white">
+                              <h4 className="mt-3 text-2xl font-semibold text-[#f4efe5]">
                                 {stepTitle || "Untitled step"}
                               </h4>
-                              <p className="mt-2 max-w-md text-sm text-zinc-200/85">
+                              <p className="mt-2 max-w-md text-sm text-[#e5dccf]/85">
                                 {stepDescription || "Step summary will appear here."}
                               </p>
                             </div>
@@ -1513,17 +2043,17 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                         </div>
                       </div>
 
-                      <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+                      <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                         <div className="mb-4 flex items-center justify-between gap-3">
                           <div>
-                            <h3 className="text-lg font-semibold text-white">
+                            <h3 className="text-lg font-semibold text-[#f4efe5]">
                               Step media and files
                             </h3>
-                            <p className="mt-1 text-xs text-zinc-400">
+                            <p className="mt-1 text-xs text-[#9f9789]">
                               Videos, PDFs, images, or files attached directly to this step.
                             </p>
                           </div>
-                          <span className="rounded-full border border-white/10 px-3 py-1 text-[11px] text-zinc-400">
+                          <span className="rounded-md border border-[#37332d] px-3 py-1 text-[11px] text-[#9f9789]">
                             {selectedStepAssets.length} asset
                             {selectedStepAssets.length === 1 ? "" : "s"}
                           </span>
@@ -1531,19 +2061,19 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
 
                         <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
                           <div className="space-y-3">
-                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                            <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-3">
                               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
-                                  <p className="text-sm font-medium text-white">
+                                  <p className="text-sm font-medium text-[#f4efe5]">
                                     Upload step attachments
                                   </p>
-                                  <p className="mt-1 text-xs text-zinc-400">
+                                  <p className="mt-1 text-xs text-[#9f9789]">
                                     Upload images, videos, PDFs, and files directly into this
                                     step.
                                   </p>
                                 </div>
                                 <Button
-                                  className="h-10 rounded-xl border-white/10 bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/15 disabled:opacity-50"
+                                  className="h-10 rounded-[10px] border border-[#37332d] bg-[#1b1916] px-4 text-xs font-semibold text-[#f4efe5] hover:bg-[#23201c] disabled:opacity-50"
                                   disabled={
                                     !productId ||
                                     !selectedCourseStep ||
@@ -1559,19 +2089,19 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                 <p className="mt-3 text-xs text-rose-300">{courseUploadError}</p>
                               ) : null}
                             </div>
-                            <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 p-3 text-xs text-zinc-500">
+                            <div className="rounded-[10px] border border-dashed border-[#37332d] bg-[#141310] p-3 text-xs text-[#7f786b]">
                               Keep using the manual fields below for external URLs and links.
                             </div>
-                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                              <p className="text-sm font-medium text-white">
+                            <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-3">
+                              <p className="text-sm font-medium text-[#f4efe5]">
                                 Attach from library
                               </p>
-                              <p className="mt-1 text-xs text-zinc-400">
+                              <p className="mt-1 text-xs text-[#9f9789]">
                                 Reuse an existing library item inside this step without removing
                                 it from the library.
                               </p>
                               <select
-                                className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                className="mt-3 h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                                 value={selectedLibraryAssetForStepId}
                                 onChange={(event) =>
                                   setSelectedLibraryAssetForStepId(event.target.value)
@@ -1585,7 +2115,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                 ))}
                               </select>
                               <Button
-                                className="mt-3 h-10 w-full rounded-xl border-white/10 bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/15 disabled:opacity-50"
+                                className="mt-3 h-10 w-full rounded-[10px] border border-[#37332d] bg-[#1b1916] px-4 text-xs font-semibold text-[#f4efe5] hover:bg-[#23201c] disabled:opacity-50"
                                 disabled={
                                   !selectedLibraryAssetForStep ||
                                   createAssetMutation.isPending
@@ -1596,13 +2126,13 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                               </Button>
                             </div>
                             <input
-                              className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                              className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                               value={courseAssetTitle}
                               onChange={(event) => setCourseAssetTitle(event.target.value)}
                               placeholder="Asset title"
                             />
                             <input
-                              className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                              className="h-11 w-full rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                               value={courseAssetUrl}
                               onChange={(event) => setCourseAssetUrl(event.target.value)}
                               placeholder="File or video URL"
@@ -1614,10 +2144,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                     key={assetType}
                                     type="button"
                                     onClick={() => setCourseAssetType(assetType)}
-                                    className={`h-10 rounded-xl border text-xs font-semibold transition ${
+                                    className={`h-10 rounded-[10px] border text-xs font-semibold transition ${
                                       courseAssetType === assetType
-                                        ? "border-sky-400/50 bg-sky-400/15 text-white"
-                                        : "border-white/10 bg-black/30 text-zinc-300 hover:bg-white/5"
+                                        ? "border-[#4b412f] bg-[#241f18] text-[#f4efe5]"
+                                        : "border-[#37332d] bg-[#11100d] text-[#c1b9ab] hover:bg-[#1d1b17]"
                                     }`}
                                   >
                                     {assetType}
@@ -1625,7 +2155,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                 )
                               )}
                             </div>
-                            <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                            <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                               <input
                                 type="checkbox"
                                 checked={courseAssetDownloadable}
@@ -1637,7 +2167,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                               Members can download this asset
                             </label>
                             <Button
-                              className="h-11 w-full rounded-xl border-emerald-500/30 bg-emerald-500 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
+                              className="h-11 w-full rounded-[10px] border border-[#4b412f] bg-[#8d7a56] text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                               disabled={
                                 !courseAssetTitle.trim() ||
                                 !courseAssetUrl.trim() ||
@@ -1671,10 +2201,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                             {selectedStepAssets.map((asset) => (
                               <div
                                 key={asset.id}
-                                className="overflow-hidden rounded-2xl border border-white/10 bg-black/30"
+                                className="overflow-hidden rounded-[10px] border border-[#37332d] bg-[#11100d]"
                               >
                                 <div
-                                  className="flex h-28 items-end border-b border-white/10 p-3"
+                                  className="flex h-28 items-end border-b border-[#2a2823] p-3"
                                   style={{
                                     backgroundImage:
                                       asset.type === "IMAGE"
@@ -1684,22 +2214,22 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                                     backgroundPosition: "center",
                                   }}
                                 >
-                                  <span className="rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] font-medium tracking-[0.18em] text-zinc-200">
+                                  <span className="rounded-md border border-[#37332d] bg-[#151411] px-2.5 py-1 text-[11px] font-medium tracking-[0.18em] text-[#e5dccf]">
                                     {asset.type}
                                   </span>
                                 </div>
                                 <div className="p-3">
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold text-white">
+                                      <p className="truncate text-sm font-semibold text-[#f4efe5]">
                                         {asset.title}
                                       </p>
-                                      <p className="mt-1 line-clamp-2 break-all text-xs text-zinc-400">
+                                      <p className="mt-1 line-clamp-2 break-all text-xs text-[#9f9789]">
                                         {asset.url}
                                       </p>
                                     </div>
                                     <Button
-                                      className="h-8 rounded-lg border-red-500/30 bg-red-500/80 px-2 text-[11px] font-semibold text-black hover:bg-red-400 disabled:opacity-50"
+                                      className="h-8 rounded-[8px] border border-[#553531] bg-[#4a2b28] px-2 text-[11px] font-semibold text-[#15130f] hover:bg-[#5a3330] disabled:opacity-50"
                                       disabled={removeAssetMutation.isPending}
                                       onClick={() =>
                                         removeAssetMutation.mutate({ assetId: asset.id })
@@ -1712,7 +2242,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                               </div>
                             ))}
                             {!selectedStepAssets.length ? (
-                              <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4 text-sm text-zinc-500">
+                              <div className="rounded-[10px] border border-dashed border-[#302d28] bg-[#151411] p-4 text-sm text-[#7f786b]">
                                 No assets attached to this step.
                               </div>
                             ) : null}
@@ -1721,7 +2251,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       </div>
                     </>
                   ) : (
-                    <div className="rounded-3xl border border-dashed border-white/10 bg-black/20 p-10 text-center text-zinc-500">
+                    <div className="rounded-[12px] border border-dashed border-[#302d28] bg-[#151411] p-10 text-center text-[#7f786b]">
                       Add the first course step to start editing.
                     </div>
                   )}
@@ -1731,19 +2261,19 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
 
             {selectedPlugin === "LIBRARY" ? (
               <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
-                <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+                <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                   <div className="mb-4 flex items-center gap-2">
-                    <GalleryVertical className="h-4 w-4 text-sky-300" />
-                    <h3 className="text-lg font-semibold text-white">Library items</h3>
+                    <GalleryVertical className="h-4 w-4 text-[#d7c29f]" />
+                    <h3 className="text-lg font-semibold text-[#f4efe5]">Library items</h3>
                   </div>
                   <div className="space-y-2">
                     <button
                       type="button"
                       onClick={() => setSelectedGalleryAssetId("")}
-                      className={`w-full rounded-2xl border p-3 text-left text-sm transition ${
+                      className={`w-full rounded-[10px] border p-3 text-left text-sm transition ${
                         selectedGalleryAssetId === ""
-                          ? "border-sky-400/50 bg-sky-400/10 text-white"
-                          : "border-white/10 bg-black/30 text-zinc-300 hover:bg-white/5"
+                          ? "border-[#4b412f] bg-[#241f18] text-[#f4efe5]"
+                          : "border-[#37332d] bg-[#11100d] text-[#c1b9ab] hover:bg-[#1d1b17]"
                       }`}
                     >
                       New library item
@@ -1753,32 +2283,32 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                         key={asset.id}
                         type="button"
                         onClick={() => setSelectedGalleryAssetId(asset.id)}
-                        className={`w-full rounded-2xl border p-3 text-left transition ${
+                        className={`w-full rounded-[10px] border p-3 text-left transition ${
                           selectedGalleryAssetId === asset.id
-                            ? "border-sky-400/50 bg-sky-400/10"
-                            : "border-white/10 bg-black/30 hover:bg-white/5"
+                            ? "border-[#4b412f] bg-[#241f18]"
+                            : "border-[#37332d] bg-[#11100d] hover:bg-[#1d1b17]"
                         }`}
                       >
-                        <p className="text-sm font-semibold text-white">{asset.title}</p>
-                        <p className="mt-1 text-xs text-zinc-400">{asset.type}</p>
+                        <p className="text-sm font-semibold text-[#f4efe5]">{asset.title}</p>
+                        <p className="mt-1 text-xs text-[#9f9789]">{asset.type}</p>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
+                <div className="rounded-[12px] border border-[#2e2b26] bg-[#1b1916] p-5">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                      <p className="text-xs font-medium text-[#9f9789]">
                         Library editor
                       </p>
-                      <h3 className="mt-1 text-xl font-semibold text-white">
+                      <h3 className="mt-1 text-xl font-semibold text-[#f4efe5]">
                         {selectedGalleryAsset ? "Edit library item" : "Create library item"}
                       </h3>
                     </div>
                     {selectedGalleryAsset ? (
                       <Button
-                        className="h-10 rounded-xl border-red-500/30 bg-red-500/80 px-4 text-xs font-semibold text-black hover:bg-red-400 disabled:opacity-50"
+                        className="h-10 rounded-[10px] border border-[#553531] bg-[#4a2b28] px-4 text-xs font-semibold text-[#15130f] hover:bg-[#5a3330] disabled:opacity-50"
                         disabled={removeAssetMutation.isPending}
                         onClick={() =>
                           removeAssetMutation.mutate({ assetId: selectedGalleryAsset.id })
@@ -1791,20 +2321,127 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                   </div>
 
                   <div className="grid gap-3">
+                    <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-4">
+                      <div className="mb-3">
+                        <p className="text-sm font-medium text-[#f4efe5]">Preview</p>
+                        <p className="mt-1 text-xs text-[#9f9789]">
+                          Closed card before selection and opened state inside the gallery modal.
+                        </p>
+                      </div>
+
+                      <div
+                        className="grid gap-4 2xl:grid-cols-[280px_minmax(0,1fr)]"
+                        style={LIBRARY_EDITOR_PREVIEW_THEME}
+                      >
+                        <section className="space-y-2">
+                          <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-[#9f9789]">
+                            <span>Closed</span>
+                            <span>Gallery card</span>
+                          </div>
+                          <div className="aspect-[4/5]">
+                            <LibraryAssetGalleryCard
+                              asset={galleryEditorPreviewAsset}
+                              className="h-full w-full"
+                              interactive={false}
+                            />
+                          </div>
+                        </section>
+
+                        <section className="space-y-2">
+                          <div className="flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.18em] text-[#9f9789]">
+                            <span>Opened</span>
+                            <span>Gallery modal</span>
+                          </div>
+                          <div className="min-h-[520px] rounded-[12px]">
+                            <LibraryAssetDetailPanel
+                              assetId={galleryEditorPreviewAsset.id}
+                              backHref=""
+                              pageName="Library"
+                              inGrid
+                              previewMode
+                              onBack={() => undefined}
+                              initialAsset={galleryEditorPreviewAsset}
+                            />
+                          </div>
+                        </section>
+                      </div>
+                    </div>
                     <input
-                      className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                      className="h-11 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                       value={galleryAssetTitle}
                       onChange={(event) => setGalleryAssetTitle(event.target.value)}
                       placeholder="Item title"
                     />
                     <textarea
-                      className="h-24 rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                      className="h-24 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                       value={galleryAssetDescription}
                       onChange={(event) => setGalleryAssetDescription(event.target.value)}
                       placeholder="Description shown in the library item page"
                     />
+                    <label className="grid gap-2 rounded-[10px] border border-[#302d28] bg-[#151411] px-3 py-3 text-sm text-[#c1b9ab]">
+                      <span className="text-xs font-medium text-[#9f9789]">
+                        Tags
+                      </span>
+                      <input
+                        className="h-11 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
+                        value={galleryAssetTagsInput}
+                        onChange={(event) => setGalleryAssetTagsInput(event.target.value)}
+                        onFocus={() => setIsGalleryTagsInputFocused(true)}
+                        onBlur={() => setIsGalleryTagsInputFocused(false)}
+                        placeholder="#interior #exterior"
+                      />
+                      <p className="text-xs text-[#9f9789]">
+                        Add one or more hashtags separated by spaces, commas, or line breaks.
+                      </p>
+                      {isGalleryTagsInputFocused && galleryTagSuggestions.length ? (
+                        <div className="flex flex-wrap gap-2">
+                          {galleryTagSuggestions.map((tag) => (
+                            <button
+                              key={tag}
+                              type="button"
+                              className="rounded-[8px] border border-[#4b412f] bg-[#241f18] px-2 py-1 text-[11px] font-medium text-[#e5dccf] transition hover:bg-[#2c251c]"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() =>
+                                setGalleryAssetTagsInput((current) =>
+                                  applyLibraryTagSuggestion(current, tag)
+                                )
+                              }
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                      {parsedGalleryTags.length ? (
+                        <div className="flex flex-wrap gap-2">
+                          {parsedGalleryTags.map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded-[8px] border border-[#3b362f] bg-[#11100d] px-2 py-1 text-[11px] font-medium text-[#e5dccf]"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </label>
+                    <label className="grid gap-2 rounded-[10px] border border-[#302d28] bg-[#151411] px-3 py-3 text-sm text-[#c1b9ab]">
+                      <span className="text-xs font-medium text-[#9f9789]">
+                        Gallery weight
+                      </span>
+                      <input
+                        className="h-11 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
+                        value={galleryAssetWeightInput}
+                        onChange={(event) => setGalleryAssetWeightInput(event.target.value)}
+                        inputMode="decimal"
+                        placeholder="0"
+                      />
+                      <p className="text-xs text-[#9f9789]">
+                        Higher weight shows first in the gallery. Equal weights keep the saved order.
+                      </p>
+                    </label>
                     <input
-                      className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                      className="h-11 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                       value={galleryAssetUrl}
                       onChange={(event) => setGalleryAssetUrl(event.target.value)}
                       placeholder="Item URL or uploaded file path"
@@ -1812,17 +2449,17 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                     {galleryAssetType === "LINK" ? (
                       <>
                         <input
-                          className="h-11 rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                          className="h-11 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                           value={galleryAssetTargetUrl}
                           onChange={(event) => setGalleryAssetTargetUrl(event.target.value)}
                           placeholder="Link destination URL"
                         />
-                        <label className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-zinc-300">
-                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                        <label className="grid gap-2 rounded-[10px] border border-[#302d28] bg-[#151411] px-3 py-3 text-sm text-[#c1b9ab]">
+                          <span className="text-xs font-medium text-[#9f9789]">
                             _target
                           </span>
                           <select
-                            className="h-11 rounded-xl border border-white/10 bg-black/40 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                            className="h-11 rounded-[10px] border border-[#37332d] bg-[#141310] px-3 text-sm text-[#f4efe5] outline-none transition focus:border-[#8d7a56]"
                             value={galleryAssetOpenInNewTab ? "_blank" : "_self"}
                             onChange={(event) =>
                               setGalleryAssetOpenInNewTab(event.target.value === "_blank")
@@ -1842,18 +2479,18 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,application/pdf,.zip,.json,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
                       onChange={(event) => void handleLibraryFileUpload(event)}
                     />
-                    <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="rounded-[10px] border border-[#302d28] bg-[#151411] p-3">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-sm font-medium text-white">Upload library files</p>
-                          <p className="mt-1 text-xs text-zinc-400">
+                          <p className="text-sm font-medium text-[#f4efe5]">Upload library files</p>
+                          <p className="mt-1 text-xs text-[#9f9789]">
                             Select one or more files to upload and create library items
                             automatically. Supported: images, MP4/WebM/MOV videos, PDFs, and
                             common office files. Save the product first before uploading.
                           </p>
                         </div>
                         <Button
-                          className="h-10 rounded-xl border-white/10 bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/15 disabled:opacity-50"
+                          className="h-10 rounded-[10px] border border-[#37332d] bg-[#1b1916] px-4 text-xs font-semibold text-[#f4efe5] hover:bg-[#23201c] disabled:opacity-50"
                           disabled={!productId || isLibraryUploadPending}
                           onClick={() => libraryFileInputRef.current?.click()}
                         >
@@ -1871,10 +2508,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                             key={assetType}
                             type="button"
                             onClick={() => setGalleryAssetType(assetType)}
-                            className={`h-10 rounded-xl border text-xs font-semibold transition ${
+                            className={`h-10 rounded-[10px] border text-xs font-semibold transition ${
                               galleryAssetType === assetType
-                                ? "border-sky-400/50 bg-sky-400/15 text-white"
-                                : "border-white/10 bg-black/30 text-zinc-300 hover:bg-white/5"
+                                ? "border-[#4b412f] bg-[#241f18] text-[#f4efe5]"
+                                : "border-[#37332d] bg-[#11100d] text-[#c1b9ab] hover:bg-[#1d1b17]"
                             }`}
                           >
                             {assetType}
@@ -1882,7 +2519,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                         )
                       )}
                     </div>
-                    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                    <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                       <input
                         type="checkbox"
                         checked={galleryAssetDownloadable}
@@ -1893,7 +2530,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       />
                       Downloadable item
                     </label>
-                    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                    <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                       <input
                         type="checkbox"
                         checked={galleryAssetShowViews}
@@ -1903,7 +2540,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       />
                       Show views on item page
                     </label>
-                    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                    <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                       <input
                         type="checkbox"
                         checked={galleryAssetShowDownloads}
@@ -1913,7 +2550,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       />
                       Show downloads on item page
                     </label>
-                    <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                    <label className="flex items-center gap-2 rounded-[10px] border border-[#37332d] bg-[#11100d] px-3 py-3 text-sm text-[#c1b9ab]">
                       <input
                         type="checkbox"
                         checked={galleryAssetShowLikes}
@@ -1924,7 +2561,7 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                       Show likes on item page
                     </label>
                     <Button
-                      className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
+                      className="h-11 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50"
                       disabled={
                         !galleryAssetTitle.trim() ||
                         !galleryAssetUrl.trim() ||
@@ -1960,6 +2597,8 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                               showViews: galleryAssetShowViews,
                               showDownloads: galleryAssetShowDownloads,
                               showLikes: galleryAssetShowLikes,
+                              tags: parsedGalleryTags,
+                              weight: parsedGalleryWeight,
                             },
                           });
                           return;
@@ -1989,6 +2628,8 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                             showViews: galleryAssetShowViews,
                             showDownloads: galleryAssetShowDownloads,
                             showLikes: galleryAssetShowLikes,
+                            tags: parsedGalleryTags,
+                            weight: parsedGalleryWeight,
                           },
                           sortOrder: galleryAssets.length + 1,
                         });
@@ -2003,6 +2644,6 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
           </section>
         ) : null}
       </div>
-    </main>
+    </AdminShell>
   );
 }

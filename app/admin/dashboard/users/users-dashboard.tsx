@@ -1,16 +1,25 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
-  ChevronDown,
-  ChevronUp,
+  CheckCircle2,
   KeyRound,
+  MailPlus,
   Search,
   ShieldCheck,
-  UserPlus,
+  UserRound,
   Users,
 } from "lucide-react";
 
+import {
+  ConsoleBadge,
+  ConsoleEmpty,
+  ConsoleSection,
+  consoleInputClassName,
+  consoleInsetClassName,
+  consoleMutedTextClassName,
+  consoleSelectClassName,
+} from "~/app/admin/_components/console-shell";
 import { AdminShell } from "~/app/admin/dashboard/admin-shell";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
@@ -32,7 +41,7 @@ type MemberRecord = {
     id: string;
     email: string | null;
     name: string | null;
-    image: string | null;
+    image?: string | null;
   };
 };
 
@@ -55,7 +64,7 @@ type ProductAccessRecord = {
   product: ProductRecord;
 };
 
-type PendingInviteRecord = {
+type InviteRecord = {
   id: string;
   email: string;
   role: ManagedRole;
@@ -78,17 +87,18 @@ const roleFilters: Array<"ALL" | TenantRole> = [
   "MEMBER",
 ];
 
-const permissionFields = [
-  { key: "canView", label: "View" },
-  { key: "canDownload", label: "Download" },
-  { key: "canEditProgress", label: "Edit progress" },
-] as const;
-
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
   year: "numeric",
 });
+
+const actionButtonClassName =
+  "h-10 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660] disabled:opacity-50";
+const mutedButtonClassName =
+  "h-10 rounded-[10px] border border-[#34312b] bg-[#1a1814] px-4 text-sm font-semibold text-[#f4efe5] hover:bg-[#221f1a] disabled:opacity-50";
+const dangerButtonClassName =
+  "h-10 rounded-[10px] border border-[#553531] bg-[#2a1816] px-4 text-sm font-semibold text-[#e2a8a1] hover:bg-[#311d1a] disabled:opacity-50";
 
 function formatRole(role: TenantRole) {
   return role.charAt(0) + role.slice(1).toLowerCase();
@@ -111,7 +121,7 @@ function getMemberSubtitle(member: MemberRecord) {
   return member.user.email || member.user.id;
 }
 
-function getInitials(member: MemberRecord) {
+function getMemberInitials(member: MemberRecord) {
   const source = member.user.name?.trim() || member.user.email || member.userId;
   return source
     .split(/\s+/)
@@ -121,38 +131,19 @@ function getInitials(member: MemberRecord) {
     .slice(0, 2);
 }
 
-function statusBadgeClass(status: MembershipStatus) {
-  if (status === "ACTIVE") {
-    return "border-emerald-400/25 bg-emerald-400/10 text-emerald-100";
-  }
-  if (status === "PENDING") {
-    return "border-amber-400/25 bg-amber-400/10 text-amber-100";
-  }
-  return "border-rose-400/25 bg-rose-400/10 text-rose-100";
+function roleTone(role: TenantRole) {
+  if (role === "OWNER") return "accent";
+  if (role === "ADMIN") return "success";
+  return "neutral";
 }
 
-function roleBadgeClass(role: TenantRole) {
-  if (role === "OWNER") {
-    return "border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-100";
-  }
-  if (role === "ADMIN") {
-    return "border-sky-400/25 bg-sky-400/10 text-sky-100";
-  }
-  if (role === "INSTRUCTOR") {
-    return "border-cyan-400/25 bg-cyan-400/10 text-cyan-100";
-  }
-  return "border-white/15 bg-white/5 text-zinc-200";
+function statusTone(status: MembershipStatus) {
+  if (status === "ACTIVE") return "success";
+  if (status === "PENDING") return "warning";
+  return "danger";
 }
 
-function buildAccessDraft(access?: ProductAccessRecord) {
-  return {
-    canView: access?.canView ?? true,
-    canDownload: access?.canDownload ?? true,
-    canEditProgress: access?.canEditProgress ?? false,
-  };
-}
-
-function ProductAccessCard({
+function ProductAccessEditor({
   access,
   userId,
 }: {
@@ -160,11 +151,9 @@ function ProductAccessCard({
   userId: string;
 }) {
   const utils = api.useUtils();
-  const [draft, setDraft] = useState(buildAccessDraft(access));
-
-  useEffect(() => {
-    setDraft(buildAccessDraft(access));
-  }, [access]);
+  const [canView, setCanView] = useState(access.canView);
+  const [canDownload, setCanDownload] = useState(access.canDownload);
+  const [canEditProgress, setCanEditProgress] = useState(access.canEditProgress);
 
   const saveMutation = api.users.grantProductAccess.useMutation({
     onSuccess: async () => {
@@ -178,64 +167,70 @@ function ProductAccessCard({
   });
 
   const isDirty =
-    draft.canView !== access.canView ||
-    draft.canDownload !== access.canDownload ||
-    draft.canEditProgress !== access.canEditProgress;
+    canView !== access.canView ||
+    canDownload !== access.canDownload ||
+    canEditProgress !== access.canEditProgress;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <div className={cn(consoleInsetClassName, "p-4")}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-semibold text-white">{access.product.name}</p>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="text-sm font-medium text-[#f4efe5]">{access.product.name}</p>
+          <p className={`mt-1 text-sm ${consoleMutedTextClassName}`}>
             {access.product.type.replaceAll("_", " ")}
             {access.product.slug ? ` / ${access.product.slug}` : ""}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-zinc-500">
-          <span>Created {formatDate(access.createdAt)}</span>
-          <span>Updated {formatDate(access.updatedAt)}</span>
-        </div>
+        <p className={`text-sm ${consoleMutedTextClassName}`}>
+          Updated {formatDate(access.updatedAt)}
+        </p>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-3">
-        {permissionFields.map((field) => (
-          <label
-            key={field.key}
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-200"
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-white/20 bg-transparent accent-sky-400"
-              checked={draft[field.key]}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  [field.key]: event.target.checked,
-                }))
-              }
-            />
-            {field.label}
-          </label>
-        ))}
+        <label className="inline-flex items-center gap-2 text-sm text-[#f4efe5]">
+          <input
+            type="checkbox"
+            checked={canView}
+            onChange={(event) => setCanView(event.target.checked)}
+          />
+          View
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm text-[#f4efe5]">
+          <input
+            type="checkbox"
+            checked={canDownload}
+            onChange={(event) => setCanDownload(event.target.checked)}
+          />
+          Download
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm text-[#f4efe5]">
+          <input
+            type="checkbox"
+            checked={canEditProgress}
+            onChange={(event) => setCanEditProgress(event.target.checked)}
+          />
+          Edit progress
+        </label>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-3">
         <Button
-          className="h-10 rounded-xl border-sky-500/30 bg-sky-500 px-4 text-sm font-semibold text-black hover:bg-sky-400 disabled:opacity-50"
+          className={actionButtonClassName}
           disabled={!isDirty || saveMutation.isPending}
           onClick={() =>
             saveMutation.mutate({
               userId,
               productId: access.productId,
-              ...draft,
+              canView,
+              canDownload,
+              canEditProgress,
             })
           }
         >
-          Save permissions
+          Save access
         </Button>
         <Button
-          className="h-10 rounded-xl border-rose-500/30 bg-rose-500/15 px-4 text-sm font-semibold text-rose-100 hover:bg-rose-500/20 disabled:opacity-50"
+          className={dangerButtonClassName}
           disabled={revokeMutation.isPending}
           onClick={() =>
             revokeMutation.mutate({
@@ -244,142 +239,154 @@ function ProductAccessCard({
             })
           }
         >
-          Remove access
+          Remove
         </Button>
       </div>
 
       {saveMutation.error ? (
-        <p className="mt-3 text-xs text-rose-300">{saveMutation.error.message}</p>
+        <p className="mt-3 text-sm text-[#e2a8a1]">{saveMutation.error.message}</p>
       ) : null}
       {revokeMutation.error ? (
-        <p className="mt-3 text-xs text-rose-300">{revokeMutation.error.message}</p>
+        <p className="mt-3 text-sm text-[#e2a8a1]">{revokeMutation.error.message}</p>
       ) : null}
     </div>
   );
 }
 
-function GrantProductAccessForm({
+function GrantAccessForm({
   userId,
-  availableProducts,
+  products,
 }: {
   userId: string;
-  availableProducts: ProductRecord[];
+  products: ProductRecord[];
 }) {
   const utils = api.useUtils();
-  const [productId, setProductId] = useState(availableProducts[0]?.id ?? "");
-  const [draft, setDraft] = useState(buildAccessDraft());
-
-  useEffect(() => {
-    if (!availableProducts.length) {
-      setProductId("");
-      return;
-    }
-
-    if (!availableProducts.some((product) => product.id === productId)) {
-      setProductId(availableProducts[0]?.id ?? "");
-    }
-  }, [availableProducts, productId]);
+  const [productId, setProductId] = useState(products[0]?.id ?? "");
+  const [canView, setCanView] = useState(true);
+  const [canDownload, setCanDownload] = useState(true);
+  const [canEditProgress, setCanEditProgress] = useState(false);
+  const activeProductId = products.some((product) => product.id === productId)
+    ? productId
+    : (products[0]?.id ?? "");
 
   const grantMutation = api.users.grantProductAccess.useMutation({
     onSuccess: async () => {
-      setDraft(buildAccessDraft());
+      setCanView(true);
+      setCanDownload(true);
+      setCanEditProgress(false);
       await utils.users.listProductAccesses.invalidate();
     },
   });
 
   return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-        <div className="flex-1 space-y-2">
-          <label className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-            Add product access
-          </label>
-          <select
-            className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
-            value={productId}
-            onChange={(event) => setProductId(event.target.value)}
-            disabled={!availableProducts.length}
-          >
-            {availableProducts.length ? null : <option value="">All products assigned</option>}
-            {availableProducts.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name}
-              </option>
-            ))}
-          </select>
-        </div>
+    <div className={cn(consoleInsetClassName, "p-4")}>
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <select
+          className={consoleSelectClassName}
+          value={activeProductId}
+          onChange={(event) => setProductId(event.target.value)}
+          disabled={!products.length}
+        >
+          {products.length ? null : <option value="">All products already assigned</option>}
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>
+              {product.name}
+            </option>
+          ))}
+        </select>
         <Button
-          className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
-          disabled={!productId || grantMutation.isPending}
+          className={actionButtonClassName}
+          disabled={!activeProductId || grantMutation.isPending}
           onClick={() =>
             grantMutation.mutate({
               userId,
-              productId,
-              ...draft,
+              productId: activeProductId,
+              canView,
+              canDownload,
+              canEditProgress,
             })
           }
         >
-          Grant access
+          Grant product access
         </Button>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-3">
-        {permissionFields.map((field) => (
-          <label
-            key={field.key}
-            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-200"
-          >
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-white/20 bg-transparent accent-emerald-400"
-              checked={draft[field.key]}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  [field.key]: event.target.checked,
-                }))
-              }
-            />
-            {field.label}
-          </label>
-        ))}
+        <label className="inline-flex items-center gap-2 text-sm text-[#f4efe5]">
+          <input
+            type="checkbox"
+            checked={canView}
+            onChange={(event) => setCanView(event.target.checked)}
+          />
+          View
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm text-[#f4efe5]">
+          <input
+            type="checkbox"
+            checked={canDownload}
+            onChange={(event) => setCanDownload(event.target.checked)}
+          />
+          Download
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm text-[#f4efe5]">
+          <input
+            type="checkbox"
+            checked={canEditProgress}
+            onChange={(event) => setCanEditProgress(event.target.checked)}
+          />
+          Edit progress
+        </label>
       </div>
 
       {grantMutation.error ? (
-        <p className="mt-3 text-xs text-rose-300">{grantMutation.error.message}</p>
+        <p className="mt-3 text-sm text-[#e2a8a1]">{grantMutation.error.message}</p>
       ) : null}
     </div>
   );
 }
 
-function MemberManagementRow({
-  member,
-  isExpanded,
-  onToggle,
-  productAccesses,
-  products,
-}: {
-  member: MemberRecord;
-  isExpanded: boolean;
-  onToggle: () => void;
-  productAccesses: ProductAccessRecord[];
-  products: ProductRecord[];
-}) {
+export function UsersDashboard() {
   const utils = api.useUtils();
-  const memberAccesses = productAccesses.filter((access) => access.userId === member.userId);
-  const availableProducts = products.filter(
-    (product) => !memberAccesses.some((access) => access.productId === product.id),
-  );
-  const canEditMembership = member.role !== "OWNER";
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | MembershipStatus>("ALL");
+  const [roleFilter, setRoleFilter] = useState<"ALL" | TenantRole>("ALL");
+  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<ManagedRole>("MEMBER");
+  const [unlockEmail, setUnlockEmail] = useState("");
+  const [unlockRole, setUnlockRole] = useState<ManagedRole>("MEMBER");
+  const [roleDrafts, setRoleDrafts] = useState<Record<string, ManagedRole>>({});
 
-  const [roleDraft, setRoleDraft] = useState<ManagedRole>(
-    member.role === "OWNER" ? "ADMIN" : member.role,
-  );
+  const currentTenantQuery = api.tenants.current.useQuery(undefined, {
+    retry: false,
+  });
+  const membersQuery = api.users.listMembers.useQuery();
+  const joinRequestsQuery = api.users.listJoinRequests.useQuery();
+  const invitesQuery = api.tenants.listInvites.useQuery();
+  const productAccessesQuery = api.users.listProductAccesses.useQuery();
+  const productsQuery = api.products.list.useQuery();
 
-  useEffect(() => {
-    setRoleDraft(member.role === "OWNER" ? "ADMIN" : member.role);
-  }, [member.role]);
-
+  const inviteMutation = api.tenants.inviteByEmail.useMutation({
+    onSuccess: async () => {
+      setInviteEmail("");
+      await Promise.all([
+        utils.tenants.listInvites.invalidate(),
+        utils.users.listJoinRequests.invalidate(),
+        utils.tenants.current.invalidate(),
+      ]);
+    },
+  });
+  const unlockMutation = api.tenants.unlockByEmail.useMutation({
+    onSuccess: async () => {
+      setUnlockEmail("");
+      await Promise.all([
+        utils.tenants.listInvites.invalidate(),
+        utils.users.listJoinRequests.invalidate(),
+        utils.users.listMembers.invalidate(),
+        utils.tenants.current.invalidate(),
+      ]);
+    },
+  });
   const updateMemberMutation = api.users.updateMember.useMutation({
     onSuccess: async () => {
       await Promise.all([
@@ -388,220 +395,617 @@ function MemberManagementRow({
       ]);
     },
   });
+  const approveJoinRequestMutation = api.users.approveJoinRequest.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.users.listJoinRequests.invalidate(),
+        utils.users.listMembers.invalidate(),
+        utils.tenants.current.invalidate(),
+      ]);
+    },
+  });
+
+  const members = (membersQuery.data ?? []) as MemberRecord[];
+  const productAccesses = (productAccessesQuery.data ?? []) as ProductAccessRecord[];
+  const products = (productsQuery.data ?? []) as ProductRecord[];
+  const pendingMemberships =
+    (joinRequestsQuery.data?.pendingMemberships ?? []) as MemberRecord[];
+  const pendingInvites = (joinRequestsQuery.data?.pendingInvites ?? []) as InviteRecord[];
+  const allInvites = (invitesQuery.data ?? []) as InviteRecord[];
+
+  const filteredMembers = members.filter((member) => {
+    const query = search.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      getMemberDisplayName(member).toLowerCase().includes(query) ||
+      getMemberSubtitle(member).toLowerCase().includes(query);
+    const matchesStatus = statusFilter === "ALL" || member.status === statusFilter;
+    const matchesRole = roleFilter === "ALL" || member.role === roleFilter;
+
+    return matchesSearch && matchesStatus && matchesRole;
+  });
+  const activeSelectedMemberId = filteredMembers.some(
+    (member) => member.userId === selectedMemberId,
+  )
+    ? selectedMemberId
+    : (filteredMembers[0]?.userId ?? "");
+  const selectedMember =
+    filteredMembers.find((member) => member.userId === activeSelectedMemberId) ??
+    members.find((member) => member.userId === activeSelectedMemberId) ??
+    null;
+  const selectedMemberAccesses = selectedMember
+    ? productAccesses.filter((access) => access.userId === selectedMember.userId)
+    : [];
+  const availableProducts = selectedMember
+    ? products.filter(
+        (product) =>
+          !selectedMemberAccesses.some((access) => access.productId === product.id),
+      )
+    : [];
+  const selectedRoleDraft = selectedMember
+    ? (roleDrafts[selectedMember.userId] ??
+      (selectedMember.role === "OWNER" ? "MEMBER" : selectedMember.role))
+    : "MEMBER";
+
+  const activeMembers = members.filter((member) => member.status === "ACTIVE").length;
+  const outstandingInvites = allInvites.filter((invite) => invite.status !== "BLOCKED").length;
 
   return (
-    <div className="overflow-hidden rounded-[28px] border border-white/10 bg-black/25">
-      <button
-        type="button"
-        className="w-full px-5 py-5 text-left transition hover:bg-white/5"
-        onClick={onToggle}
-      >
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-sky-400/10 text-sm font-semibold text-sky-100">
-              {getInitials(member)}
-            </div>
-            <div>
-              <p className="text-base font-semibold text-white">
-                {getMemberDisplayName(member)}
-              </p>
-              <p className="mt-1 text-sm text-zinc-400">{getMemberSubtitle(member)}</p>
-            </div>
-          </div>
+    <AdminShell
+      title="Users"
+      description="Manage the tenant directory without mixing approvals, invitations, and product permissions into a single crowded page."
+    >
+      <div className="space-y-5">
+        <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+          <ConsoleSection
+            title="Directory"
+            description="Search the current member list and open one person at a time for role and access changes."
+          >
+            <div className="grid gap-4">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_160px]">
+                <label className="relative block">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#7f7769]" />
+                  <input
+                    className={cn(consoleInputClassName, "pl-9")}
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search by name or email"
+                  />
+                </label>
 
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            <span
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium",
-                roleBadgeClass(member.role),
-              )}
-            >
-              {formatRole(member.role)}
-            </span>
-            <span
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium",
-                statusBadgeClass(member.status),
-              )}
-            >
-              {formatStatus(member.status)}
-            </span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-zinc-300">
-              {memberAccesses.length} product{memberAccesses.length === 1 ? "" : "s"}
-            </span>
-            <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-zinc-500">
-              Joined {formatDate(member.joinedAt)}
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-xs text-white">
-              {isExpanded ? "Hide" : "Manage"}
-              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </span>
-          </div>
-        </div>
-      </button>
+                <select
+                  className={consoleSelectClassName}
+                  value={statusFilter}
+                  onChange={(event) =>
+                    setStatusFilter(event.target.value as "ALL" | MembershipStatus)
+                  }
+                >
+                  {statusFilters.map((status) => (
+                    <option key={status} value={status}>
+                      {status === "ALL" ? "All statuses" : formatStatus(status)}
+                    </option>
+                  ))}
+                </select>
 
-      {isExpanded ? (
-        <div className="border-t border-white/10 px-5 py-5">
-          <div className="grid gap-5 2xl:grid-cols-[340px_minmax(0,1fr)]">
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                  Membership summary
-                </p>
-                <div className="mt-4 space-y-3 text-sm text-zinc-300">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                      Member ID
-                    </p>
-                    <p className="mt-1 break-all text-white">{member.userId}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                      Created
-                    </p>
-                    <p className="mt-1 text-white">{formatDate(member.createdAt)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                      Last updated
-                    </p>
-                    <p className="mt-1 text-white">{formatDate(member.updatedAt)}</p>
-                  </div>
-                </div>
+                <select
+                  className={consoleSelectClassName}
+                  value={roleFilter}
+                  onChange={(event) => setRoleFilter(event.target.value as "ALL" | TenantRole)}
+                >
+                  {roleFilters.map((role) => (
+                    <option key={role} value={role}>
+                      {role === "ALL" ? "All roles" : formatRole(role)}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                  Membership controls
-                </p>
-                {canEditMembership ? (
-                  <>
-                    <div className="mt-4 space-y-3">
-                      <div>
-                        <label className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-                          Role
-                        </label>
-                        <select
-                          className="mt-2 h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
-                          value={roleDraft}
-                          onChange={(event) =>
-                            setRoleDraft(event.target.value as ManagedRole)
-                          }
-                        >
-                          {roleOptions.map((role) => (
-                            <option key={role} value={role}>
-                              {formatRole(role)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+              {filteredMembers.length ? (
+                <div className="overflow-hidden rounded-[10px] border border-[#2e2b26]">
+                  <div className="divide-y divide-[#2a2823]">
+                    {filteredMembers.map((member) => {
+                      const isSelected = member.userId === activeSelectedMemberId;
+                      const accessCount = productAccesses.filter(
+                        (access) => access.userId === member.userId,
+                      ).length;
 
-                      <div className="flex flex-wrap gap-3">
-                        <Button
-                          className="h-10 rounded-xl border-sky-500/30 bg-sky-500 px-4 text-sm font-semibold text-black hover:bg-sky-400 disabled:opacity-50"
-                          disabled={
-                            roleDraft === member.role || updateMemberMutation.isPending
-                          }
-                          onClick={() =>
-                            updateMemberMutation.mutate({
-                              userId: member.userId,
-                              role: roleDraft,
-                            })
-                          }
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => setSelectedMemberId(member.userId)}
+                          className={cn(
+                            "flex w-full flex-col gap-3 px-4 py-4 text-left transition lg:flex-row lg:items-center lg:justify-between",
+                            isSelected ? "bg-[#201d18]" : "bg-[#171613] hover:bg-[#1d1a16]",
+                          )}
                         >
-                          Save role
-                        </Button>
-                        <Button
-                          className="h-10 rounded-xl border-emerald-500/30 bg-emerald-500/15 px-4 text-sm font-semibold text-emerald-100 hover:bg-emerald-500/20 disabled:opacity-50"
-                          disabled={
-                            member.status === "ACTIVE" || updateMemberMutation.isPending
-                          }
-                          onClick={() =>
-                            updateMemberMutation.mutate({
-                              userId: member.userId,
-                              status: "ACTIVE",
-                            })
-                          }
-                        >
-                          {member.status === "PENDING" ? "Approve member" : "Set active"}
-                        </Button>
-                        <Button
-                          className="h-10 rounded-xl border-rose-500/30 bg-rose-500/15 px-4 text-sm font-semibold text-rose-100 hover:bg-rose-500/20 disabled:opacity-50"
-                          disabled={
-                            member.status === "BLOCKED" || updateMemberMutation.isPending
-                          }
-                          onClick={() =>
-                            updateMemberMutation.mutate({
-                              userId: member.userId,
-                              status: "BLOCKED",
-                            })
-                          }
-                        >
-                          Block member
-                        </Button>
-                      </div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[#312d27] bg-[#11100d] text-sm font-semibold text-[#f4efe5]">
+                              {getMemberInitials(member)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-[#f4efe5]">
+                                {getMemberDisplayName(member)}
+                              </p>
+                              <p className={`mt-1 text-sm ${consoleMutedTextClassName}`}>
+                                {getMemberSubtitle(member)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <ConsoleBadge tone={roleTone(member.role)}>
+                              {formatRole(member.role)}
+                            </ConsoleBadge>
+                            <ConsoleBadge tone={statusTone(member.status)}>
+                              {formatStatus(member.status)}
+                            </ConsoleBadge>
+                            <span className={`text-sm ${consoleMutedTextClassName}`}>
+                              {accessCount} product{accessCount === 1 ? "" : "s"}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <ConsoleEmpty
+                  title="No members matched the current filters"
+                  description="Try a different search or clear the role and status filters."
+                />
+              )}
+            </div>
+          </ConsoleSection>
+
+          <ConsoleSection
+            title="Selected user"
+            description="Edit one membership at a time so access changes stay readable."
+          >
+            {selectedMember ? (
+              <div className="space-y-4">
+                <div className={cn(consoleInsetClassName, "p-4")}>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-[10px] border border-[#312d27] bg-[#11100d] text-sm font-semibold text-[#f4efe5]">
+                      {getMemberInitials(selectedMember)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold text-[#f4efe5]">
+                        {getMemberDisplayName(selectedMember)}
+                      </p>
+                      <p className={`mt-1 text-sm ${consoleMutedTextClassName}`}>
+                        {getMemberSubtitle(selectedMember)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <dl className="mt-4 space-y-3 text-sm">
+                    <div className="flex items-center justify-between gap-4 border-t border-[#2a2823] pt-3">
+                      <dt className={consoleMutedTextClassName}>Joined</dt>
+                      <dd className="text-[#f4efe5]">{formatDate(selectedMember.joinedAt)}</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-t border-[#2a2823] pt-3">
+                      <dt className={consoleMutedTextClassName}>Status</dt>
+                      <dd>
+                        <ConsoleBadge tone={statusTone(selectedMember.status)}>
+                          {formatStatus(selectedMember.status)}
+                        </ConsoleBadge>
+                      </dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-t border-[#2a2823] pt-3">
+                      <dt className={consoleMutedTextClassName}>Role</dt>
+                      <dd>
+                        <ConsoleBadge tone={roleTone(selectedMember.role)}>
+                          {formatRole(selectedMember.role)}
+                        </ConsoleBadge>
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div className={cn(consoleInsetClassName, "p-4")}>
+                  <div className="grid gap-3">
+                    <label className="grid gap-2">
+                      <span className={`text-sm ${consoleMutedTextClassName}`}>Membership role</span>
+                      <select
+                        className={consoleSelectClassName}
+                        value={selectedRoleDraft}
+                        onChange={(event) =>
+                          setRoleDrafts((current) => ({
+                            ...current,
+                            [selectedMember.userId]: event.target.value as ManagedRole,
+                          }))
+                        }
+                        disabled={selectedMember.role === "OWNER"}
+                      >
+                        {roleOptions.map((role) => (
+                          <option key={role} value={role}>
+                            {formatRole(role)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        className={actionButtonClassName}
+                        disabled={
+                          selectedMember.role === "OWNER" ||
+                          selectedRoleDraft === selectedMember.role ||
+                          updateMemberMutation.isPending
+                        }
+                        onClick={() =>
+                          updateMemberMutation.mutate({
+                            userId: selectedMember.userId,
+                            role: selectedRoleDraft,
+                          })
+                        }
+                      >
+                        Save role
+                      </Button>
+                      <Button
+                        className={mutedButtonClassName}
+                        disabled={
+                          selectedMember.status === "ACTIVE" || updateMemberMutation.isPending
+                        }
+                        onClick={() =>
+                          updateMemberMutation.mutate({
+                            userId: selectedMember.userId,
+                            status: "ACTIVE",
+                          })
+                        }
+                      >
+                        Set active
+                      </Button>
+                      <Button
+                        className={dangerButtonClassName}
+                        disabled={
+                          selectedMember.role === "OWNER" ||
+                          selectedMember.status === "BLOCKED" ||
+                          updateMemberMutation.isPending
+                        }
+                        onClick={() =>
+                          updateMemberMutation.mutate({
+                            userId: selectedMember.userId,
+                            status: "BLOCKED",
+                          })
+                        }
+                      >
+                        Block user
+                      </Button>
                     </div>
 
+                    {selectedMember.role === "OWNER" ? (
+                      <p className={`text-sm ${consoleMutedTextClassName}`}>
+                        Owner access stays protected here. Product permissions can still be
+                        reviewed below.
+                      </p>
+                    ) : null}
+
                     {updateMemberMutation.error ? (
-                      <p className="mt-3 text-xs text-rose-300">
+                      <p className="text-sm text-[#e2a8a1]">
                         {updateMemberMutation.error.message}
                       </p>
                     ) : null}
-                  </>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-[#f4efe5]">Product access</p>
+                    <p className={`mt-1 text-sm ${consoleMutedTextClassName}`}>
+                      Assign only the products this user should be able to open.
+                    </p>
+                  </div>
+
+                  <GrantAccessForm userId={selectedMember.userId} products={availableProducts} />
+
+                  {selectedMemberAccesses.length ? (
+                    <div className="space-y-3">
+                      {selectedMemberAccesses.map((access) => (
+                        <ProductAccessEditor
+                          key={`${access.id}-${access.updatedAt.toISOString()}-${access.canView}-${access.canDownload}-${access.canEditProgress}`}
+                          access={access}
+                          userId={selectedMember.userId}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <ConsoleEmpty
+                      title="No product access assigned yet"
+                      description="Use the form above to grant access to one of the available products."
+                    />
+                  )}
+                </div>
+              </div>
+            ) : (
+              <ConsoleEmpty
+                title="No member selected"
+                description="Choose someone from the directory to manage role, status, and product access."
+              />
+            )}
+          </ConsoleSection>
+        </div>
+        
+        <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+          <ConsoleSection
+            title="Requests and queue"
+            description="Keep approvals separate from the main member directory so pending items are easier to resolve."
+          >
+            <div className="space-y-4">
+              <div className={cn(consoleInsetClassName, "p-4")}>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-[#c9b089]" />
+                    <p className="text-sm font-medium text-[#f4efe5]">Pending join requests</p>
+                  </div>
+                  <ConsoleBadge tone={pendingMemberships.length ? "warning" : "success"}>
+                    {pendingMemberships.length}
+                  </ConsoleBadge>
+                </div>
+
+                {pendingMemberships.length ? (
+                  <div className="space-y-3">
+                    {pendingMemberships.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex flex-col gap-3 border-t border-[#2a2823] pt-3 first:border-t-0 first:pt-0"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-[#f4efe5]">
+                            {getMemberDisplayName(member)}
+                          </p>
+                          <p className={`mt-1 text-sm ${consoleMutedTextClassName}`}>
+                            {getMemberSubtitle(member)}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                          <Button
+                            className={actionButtonClassName}
+                            disabled={approveJoinRequestMutation.isPending}
+                            onClick={() =>
+                              approveJoinRequestMutation.mutate({
+                                userId: member.userId,
+                                role: "MEMBER",
+                              })
+                            }
+                          >
+                            <CheckCircle2 className="mr-2 h-4 w-4" />
+                            Approve
+                          </Button>
+                          <Button
+                            className={dangerButtonClassName}
+                            disabled={updateMemberMutation.isPending}
+                            onClick={() =>
+                              updateMemberMutation.mutate({
+                                userId: member.userId,
+                                status: "BLOCKED",
+                              })
+                            }
+                          >
+                            Decline
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
-                  <p className="mt-4 text-sm text-zinc-400">
-                    Owner membership is protected here. View access can still be reviewed, but
-                    role and status are locked.
-                  </p>
+                  <ConsoleEmpty
+                    title="No join requests"
+                    description="New membership requests will appear here when the tenant is using approval mode."
+                  />
                 )}
+              </div>
+
+              <div className={cn(consoleInsetClassName, "p-4")}>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <MailPlus className="h-4 w-4 text-[#c9b089]" />
+                    <p className="text-sm font-medium text-[#f4efe5]">Pending invites</p>
+                  </div>
+                  <ConsoleBadge tone={pendingInvites.length ? "warning" : "success"}>
+                    {pendingInvites.length}
+                  </ConsoleBadge>
+                </div>
+
+                {pendingInvites.length ? (
+                  <div className="space-y-3">
+                    {pendingInvites.map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="flex items-center justify-between gap-3 border-t border-[#2a2823] pt-3 first:border-t-0 first:pt-0"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-[#f4efe5]">{invite.email}</p>
+                          <p className={`mt-1 text-sm ${consoleMutedTextClassName}`}>
+                            {formatRole(invite.role)} invited on {formatDate(invite.createdAt)}
+                          </p>
+                        </div>
+                        <ConsoleBadge tone="warning">{formatStatus(invite.status)}</ConsoleBadge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <ConsoleEmpty
+                    title="No pending invites"
+                    description="Invite activity will appear here after you send access to new people."
+                  />
+                )}
+              </div>
+
+              {approveJoinRequestMutation.error ? (
+                <p className="text-sm text-[#e2a8a1]">
+                  {approveJoinRequestMutation.error.message}
+                </p>
+              ) : null}
+            </div>
+          </ConsoleSection>
+
+          <ConsoleSection
+            title="Invite and unlock"
+            description="Invite a future user by email or unlock immediate access for someone who should enter the tenant right away."
+          >
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className={cn(consoleInsetClassName, "p-4")}>
+                <div className="flex items-center gap-2">
+                  <MailPlus className="h-4 w-4 text-[#c9b089]" />
+                  <p className="text-sm font-medium text-[#f4efe5]">Send invitation</p>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <input
+                    className={consoleInputClassName}
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(event) => setInviteEmail(event.target.value)}
+                    placeholder="name@company.com"
+                  />
+                  <select
+                    className={consoleSelectClassName}
+                    value={inviteRole}
+                    onChange={(event) => setInviteRole(event.target.value as ManagedRole)}
+                  >
+                    {roleOptions.map((role) => (
+                      <option key={role} value={role}>
+                        {formatRole(role)}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    className={actionButtonClassName}
+                    disabled={!inviteEmail.trim() || inviteMutation.isPending}
+                    onClick={() =>
+                      inviteMutation.mutate({
+                        email: inviteEmail.trim(),
+                        role: inviteRole,
+                      })
+                    }
+                  >
+                    Send invite
+                  </Button>
+                </div>
+                {inviteMutation.error ? (
+                  <p className="mt-3 text-sm text-[#e2a8a1]">{inviteMutation.error.message}</p>
+                ) : null}
+              </div>
+
+              <div className={cn(consoleInsetClassName, "p-4")}>
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-[#c9b089]" />
+                  <p className="text-sm font-medium text-[#f4efe5]">Unlock immediate access</p>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <input
+                    className={consoleInputClassName}
+                    type="email"
+                    value={unlockEmail}
+                    onChange={(event) => setUnlockEmail(event.target.value)}
+                    placeholder="name@company.com"
+                  />
+                  <select
+                    className={consoleSelectClassName}
+                    value={unlockRole}
+                    onChange={(event) => setUnlockRole(event.target.value as ManagedRole)}
+                  >
+                    {roleOptions.map((role) => (
+                      <option key={role} value={role}>
+                        {formatRole(role)}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    className={mutedButtonClassName}
+                    disabled={!unlockEmail.trim() || unlockMutation.isPending}
+                    onClick={() =>
+                      unlockMutation.mutate({
+                        email: unlockEmail.trim(),
+                        role: unlockRole,
+                      })
+                    }
+                  >
+                    Unlock access
+                  </Button>
+                </div>
+                {unlockMutation.error ? (
+                  <p className="mt-3 text-sm text-[#e2a8a1]">{unlockMutation.error.message}</p>
+                ) : null}
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                    Product access
-                  </p>
-                  <h3 className="mt-2 text-lg font-semibold text-white">
-                    Manage what this user can open
-                  </h3>
+            <div className="mt-5 grid gap-4 lg:grid-cols-4">
+              <div className={cn(consoleInsetClassName, "p-4")}>
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-[#c9b089]" />
+                  <p className="text-sm font-medium text-[#f4efe5]">Active members</p>
                 </div>
-                <p className="text-sm text-zinc-400">
-                  {memberAccesses.length} assigned / {products.length} available products
+                <p className="mt-3 text-3xl font-semibold text-[#f4efe5]">{activeMembers}</p>
+              </div>
+
+              <div className={cn(consoleInsetClassName, "p-4")}>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-[#c9b089]" />
+                  <p className="text-sm font-medium text-[#f4efe5]">Queue items</p>
+                </div>
+                <p className="mt-3 text-3xl font-semibold text-[#f4efe5]">
+                  {pendingMemberships.length + pendingInvites.length}
                 </p>
               </div>
 
-              <div className="mt-4">
-                <GrantProductAccessForm
-                  userId={member.userId}
-                  availableProducts={availableProducts}
-                />
+              <div className={cn(consoleInsetClassName, "p-4")}>
+                <div className="flex items-center gap-2">
+                  <MailPlus className="h-4 w-4 text-[#c9b089]" />
+                  <p className="text-sm font-medium text-[#f4efe5]">Outstanding invites</p>
+                </div>
+                <p className="mt-3 text-3xl font-semibold text-[#f4efe5]">
+                  {outstandingInvites}
+                </p>
               </div>
 
-              <div className="mt-4 space-y-3">
-                {memberAccesses.length ? (
-                  memberAccesses.map((access) => (
-                    <ProductAccessCard
-                      key={access.id}
-                      access={access}
-                      userId={member.userId}
-                    />
-                  ))
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-5 text-sm text-zinc-500">
-                    This member does not have any product access yet.
-                  </div>
-                )}
+              <div className={cn(consoleInsetClassName, "p-4")}>
+                <div className="flex items-center gap-2">
+                  <UserRound className="h-4 w-4 text-[#c9b089]" />
+                  <p className="text-sm font-medium text-[#f4efe5]">Member cap</p>
+                </div>
+                <p className="mt-3 text-3xl font-semibold text-[#f4efe5]">
+                  {currentTenantQuery.data?.policy?.maxActiveMembers ?? "Unlimited"}
+                </p>
               </div>
             </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
-export function UsersDashboard() {
-  return null;
+            <div className="mt-5">
+              <p className="text-sm font-medium text-[#f4efe5]">Recent invite activity</p>
+              {allInvites.length ? (
+                <div className="mt-3 overflow-hidden rounded-[10px] border border-[#2e2b26]">
+                  <div className="divide-y divide-[#2a2823]">
+                    {allInvites.slice(0, 6).map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="flex flex-col gap-3 bg-[#171613] px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-[#f4efe5]">{invite.email}</p>
+                          <p className={`mt-1 text-sm ${consoleMutedTextClassName}`}>
+                            {formatRole(invite.role)} / {formatDate(invite.createdAt)}
+                          </p>
+                        </div>
+                        <ConsoleBadge tone={statusTone(invite.status)}>
+                          {formatStatus(invite.status)}
+                        </ConsoleBadge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <ConsoleEmpty
+                    title="No invite history yet"
+                    description="The latest invitation activity will appear here once the tenant starts adding people."
+                  />
+                </div>
+              )}
+            </div>
+          </ConsoleSection>
+        </div>
+      </div>
+    </AdminShell>
+  );
 }

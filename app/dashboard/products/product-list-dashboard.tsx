@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Box, Plus, Sparkles } from "lucide-react";
+import { ArrowRight, Box, Plus } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import {
+  ConsoleBadge,
+  ConsoleEmpty,
+  ConsoleSection,
+  consoleInsetClassName,
+  consoleMutedTextClassName,
+} from "~/app/admin/_components/console-shell";
 import { Button } from "~/components/ui/button";
+import { cn } from "~/lib/utils";
 import { api } from "~/trpc/react";
 
 const PRODUCT_TYPE_LABELS = {
@@ -25,7 +32,7 @@ function formatProductPrice(product: {
   priceCents: number | null;
   currency: string | null;
 }) {
-  if (product.isFree) return "Free access";
+  if (product.isFree) return "Free";
   if (product.priceCents == null) return "Paid";
 
   try {
@@ -45,227 +52,162 @@ export function ProductListDashboard({ embedded = false }: { embedded?: boolean 
   const currentTenantQuery = api.tenants.current.useQuery(undefined, {
     retry: false,
   });
+
+  const products = productsQuery.data ?? [];
+  const publishedCount = products.filter((product) => product.status === "PUBLISHED").length;
+  const draftCount = products.filter((product) => product.status === "DRAFT").length;
   const productLimitReached =
     (currentTenantQuery.data?.policy?.maxProducts ?? null) !== null &&
     (currentTenantQuery.data?.usage.products ?? 0) >=
       (currentTenantQuery.data?.policy?.maxProducts ?? 0);
 
   const content = (
-    <div className="space-y-6">
-      {!embedded ? (
-        <section className="rounded-3xl border border-white/10 bg-black/30 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03),0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-sky-200">
-                <Sparkles className="h-3.5 w-3.5" />
-                Product builder
-              </div>
-              <div>
-                <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">
-                  Products
-                </h1>
-                <p className="mt-2 max-w-2xl text-sm text-zinc-400 md:text-base">
-                  Start from a clean list, create a product on its own page, and edit each
-                  product in a dedicated workspace.
-                </p>
-              </div>
-            </div>
-
-            <Link
-              href={productLimitReached ? "#" : "/admin/dashboard/products/new"}
-              aria-disabled={productLimitReached}
-              onClick={(event) => {
-                if (productLimitReached) event.preventDefault();
-              }}
-            >
-              <Button className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400">
-                <Plus className="mr-2 h-4 w-4" />
-                {productLimitReached ? "Product limit reached" : "Create product"}
-              </Button>
-            </Link>
+    <div className="space-y-5">
+      <ConsoleSection
+        title="Product library"
+        description="Products are listed here in one place, while detailed configuration stays inside each editor."
+        actions={
+          <Link
+            href={productLimitReached ? "#" : "/admin/dashboard/products/new"}
+            aria-disabled={productLimitReached}
+            onClick={(event) => {
+              if (productLimitReached) event.preventDefault();
+            }}
+          >
+            <Button className="h-10 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660]">
+              <Plus className="mr-2 h-4 w-4" />
+              {productLimitReached ? "Product limit reached" : "New product"}
+            </Button>
+          </Link>
+        }
+      >
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className={cn(consoleInsetClassName, "p-4")}>
+            <p className="text-sm font-medium text-[#f4efe5]">Total products</p>
+            <p className="mt-3 text-3xl font-semibold text-[#f4efe5]">{products.length}</p>
           </div>
-          {productLimitReached ? (
-            <p className="text-sm text-amber-200">
-              This tenant is at its configured product limit. Archive an existing product or ask
-              a global admin to raise the cap.
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-
-      <section className="grid gap-4 md:grid-cols-3">
-          <Card className="rounded-2xl border-white/10 bg-black/30">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                Total products
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold text-white">
-                {productsQuery.data?.length ?? 0}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl border-white/10 bg-black/30">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                Published
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold text-white">
-                {(productsQuery.data ?? []).filter((product) => product.status === "PUBLISHED")
-                  .length}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-2xl border-white/10 bg-black/30">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs uppercase tracking-[0.24em] text-zinc-500">
-                Drafts
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold text-white">
-                {(productsQuery.data ?? []).filter((product) => product.status === "DRAFT").length}
-              </p>
-            </CardContent>
-          </Card>
-        </section>
-
-      <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.22em] text-zinc-500">
-              Product library
-            </h2>
-            {productsQuery.isLoading ? (
-              <span className="text-xs text-zinc-500">Loading...</span>
-            ) : null}
+          <div className={cn(consoleInsetClassName, "p-4")}>
+            <p className="text-sm font-medium text-[#f4efe5]">Published</p>
+            <p className="mt-3 text-3xl font-semibold text-[#f4efe5]">{publishedCount}</p>
           </div>
+          <div className={cn(consoleInsetClassName, "p-4")}>
+            <p className="text-sm font-medium text-[#f4efe5]">Drafts</p>
+            <p className="mt-3 text-3xl font-semibold text-[#f4efe5]">{draftCount}</p>
+          </div>
+        </div>
 
-          {!productsQuery.data?.length && !productsQuery.isLoading ? (
-            <div className="rounded-3xl border border-dashed border-white/10 bg-black/20 p-12 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-                <Box className="h-6 w-6 text-zinc-300" />
-              </div>
-              <h3 className="mt-4 text-xl font-semibold text-white">No products yet</h3>
-              <p className="mt-2 text-sm text-zinc-400">
-                Create the first product and then configure its plugins on its own editor
-                page.
-              </p>
-              <Link
-                href={productLimitReached ? "#" : "/admin/dashboard/products/new"}
-                className="mt-6 inline-flex"
-                aria-disabled={productLimitReached}
-                onClick={(event) => {
-                  if (productLimitReached) event.preventDefault();
-                }}
-              >
-                <Button className="h-11 rounded-xl border-emerald-500/30 bg-emerald-500 px-4 text-sm font-semibold text-black hover:bg-emerald-400">
-                  <Plus className="mr-2 h-4 w-4" />
-                  {productLimitReached ? "Product limit reached" : "Create first product"}
-                </Button>
-              </Link>
-            </div>
-          ) : null}
+        {productLimitReached ? (
+          <div className="mt-4 rounded-[10px] border border-[#51422b] bg-[#2a2114] px-4 py-3 text-sm text-[#dfc28e]">
+            This tenant is at its configured product limit. Archive an existing product or ask a
+            global admin to raise the cap.
+          </div>
+        ) : null}
+      </ConsoleSection>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            {(productsQuery.data ?? []).map((product) => {
-              const enabledModules = (product.moduleConfigs ?? []).filter(
-                (moduleConfig) => moduleConfig.isEnabled
-              );
+      {products.length ? (
+        <ConsoleSection
+          title="Products"
+          description="Open a product editor to manage modules, steps, assets, and publishing."
+        >
+          <div className="overflow-hidden rounded-[10px] border border-[#2e2b26]">
+            <div className="divide-y divide-[#2a2823]">
+              {products.map((product) => {
+                const enabledModules = (product.moduleConfigs ?? []).filter(
+                  (moduleConfig) => moduleConfig.isEnabled,
+                );
 
-              return (
-                <Link
-                  key={product.id}
-                  href={`/admin/dashboard/products/${product.id}`}
-                  className="group rounded-3xl border border-white/10 bg-black/25 p-5 transition hover:border-sky-400/40 hover:bg-black/35"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
-                        {PRODUCT_TYPE_LABELS[product.type]}
-                      </p>
-                      <h3 className="mt-2 text-xl font-semibold text-white">
-                        {product.name}
-                      </h3>
-                      {product.subtitle ? (
-                        <p className="mt-1 text-sm text-zinc-400">{product.subtitle}</p>
-                      ) : null}
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                        product.status === "PUBLISHED"
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : "bg-zinc-800 text-zinc-300"
-                      }`}
-                    >
-                      {product.status}
-                    </span>
-                  </div>
-
-                  <p className="mt-4 line-clamp-2 text-sm text-zinc-400">
-                    {product.description || "No product description yet."}
-                  </p>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span
-                      className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                        product.isFree
-                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
-                          : "border-amber-400/20 bg-amber-400/10 text-amber-100"
-                      }`}
-                    >
-                      {formatProductPrice(product)}
-                    </span>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {enabledModules.length ? (
-                      enabledModules.map((moduleConfig) => (
-                        <span
-                          key={moduleConfig.id}
-                          className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-zinc-300"
+                return (
+                  <Link
+                    key={product.id}
+                    href={`/admin/dashboard/products/${product.id}` as any}
+                    className="flex flex-col gap-4 bg-[#171613] px-4 py-4 transition hover:bg-[#1d1a16] xl:flex-row xl:items-center xl:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-[#f4efe5]">{product.name}</p>
+                        <ConsoleBadge
+                          tone={product.status === "PUBLISHED" ? "success" : "neutral"}
                         >
-                          {
-                            MODULE_LABELS[
-                              moduleConfig.moduleType as keyof typeof MODULE_LABELS
-                            ]
-                          }
-                        </span>
-                      ))
-                    ) : (
-                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-zinc-500">
-                        No plugins enabled
-                      </span>
-                    )}
-                  </div>
+                          {product.status}
+                        </ConsoleBadge>
+                        <ConsoleBadge tone="accent">
+                          {PRODUCT_TYPE_LABELS[product.type]}
+                        </ConsoleBadge>
+                      </div>
 
-                  <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
-                    <div className="flex gap-4 text-xs text-zinc-500">
-                      <span>{product._count.steps} steps</span>
-                      <span>{product._count.assets} assets</span>
+                      {product.subtitle ? (
+                        <p className={`mt-2 text-sm ${consoleMutedTextClassName}`}>
+                          {product.subtitle}
+                        </p>
+                      ) : null}
+
+                      <div className={`mt-2 flex flex-wrap gap-3 text-sm ${consoleMutedTextClassName}`}>
+                        <span>{formatProductPrice(product)}</span>
+                        <span>{product._count.steps} steps</span>
+                        <span>{product._count.assets} assets</span>
+                      </div>
                     </div>
-                    <span className="inline-flex items-center gap-2 text-sm font-medium text-sky-200">
-                      Open editor
-                      <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-                </Link>
-              );
-            })}
+
+                    <div className="flex flex-col gap-3 xl:items-end">
+                      <div className="flex flex-wrap gap-2">
+                        {enabledModules.length ? (
+                          enabledModules.map((moduleConfig) => (
+                            <ConsoleBadge key={moduleConfig.id}>
+                              {
+                                MODULE_LABELS[
+                                  moduleConfig.moduleType as keyof typeof MODULE_LABELS
+                                ]
+                              }
+                            </ConsoleBadge>
+                          ))
+                        ) : (
+                          <ConsoleBadge>No modules</ConsoleBadge>
+                        )}
+                      </div>
+
+                      <span className="inline-flex items-center gap-2 text-sm font-medium text-[#d7c29f]">
+                        Open editor
+                        <ArrowRight className="h-4 w-4" />
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-      </section>
+        </ConsoleSection>
+      ) : (
+        <ConsoleSection
+          title="Products"
+          description="Create the first product and then move into its dedicated editor."
+        >
+          <ConsoleEmpty
+            title="No products yet"
+            description="Create a product to start configuring modules, steps, assets, and publishing rules."
+          />
+          <Link
+            href={productLimitReached ? "#" : "/admin/dashboard/products/new"}
+            className="mt-4 inline-flex"
+            aria-disabled={productLimitReached}
+            onClick={(event) => {
+              if (productLimitReached) event.preventDefault();
+            }}
+          >
+            <Button className="h-10 rounded-[10px] border border-[#4b412f] bg-[#8d7a56] px-4 text-sm font-semibold text-[#15130f] hover:bg-[#9a8660]">
+              <Box className="mr-2 h-4 w-4" />
+              Create first product
+            </Button>
+          </Link>
+        </ConsoleSection>
+      )}
     </div>
   );
 
   if (embedded) return content;
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.15),_transparent_35%),linear-gradient(180deg,_#050816_0%,_#02040b_100%)] px-4 py-8 text-white md:px-8">
-      <div className="mx-auto max-w-7xl">{content}</div>
+    <main className="min-h-screen bg-[#121210] px-5 py-6 text-[#f4efe5] lg:px-8">
+      <div className="mx-auto max-w-[1280px]">{content}</div>
     </main>
   );
 }
