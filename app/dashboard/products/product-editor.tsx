@@ -47,6 +47,7 @@ type LibraryAssetMetadata = {
   showViews?: boolean;
   showDownloads?: boolean;
   showLikes?: boolean;
+  sourceLibraryAssetId?: string;
 };
 
 type ProductEditorProps = {
@@ -212,6 +213,38 @@ function parseUploadResponse(text: string) {
   }
 }
 
+async function uploadProductFile(input: { file: File; productId: string }) {
+  const tenantSlug =
+    typeof window === "undefined"
+      ? null
+      : window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);
+  const formData = new FormData();
+  formData.set("file", input.file);
+  formData.set("productId", input.productId);
+
+  const response = await fetch("/api/uploads", {
+    method: "POST",
+    body: formData,
+    headers: tenantSlug ? { "x-tenant-slug": tenantSlug } : undefined,
+  });
+  const responseText = await response.text();
+  const result = parseUploadResponse(responseText);
+
+  if (!response.ok) {
+    throw new Error(messageFromUploadResponse(response, responseText));
+  }
+
+  if (!result?.publicUrl || !result.assetType) {
+    throw new Error("Upload completed without a valid asset payload.");
+  }
+
+  return {
+    assetType: result.assetType,
+    fileName: result.fileName,
+    publicUrl: result.publicUrl,
+  };
+}
+
 function buildModulePayload({
   selectedModules,
   libraryAllowDownloads,
@@ -367,8 +400,15 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const [courseAssetUrl, setCourseAssetUrl] = useState("");
   const [courseAssetType, setCourseAssetType] = useState<ProductAssetType>("VIDEO");
   const [courseAssetDownloadable, setCourseAssetDownloadable] = useState(false);
+  const [courseUploadError, setCourseUploadError] = useState("");
+  const [isCourseUploadPending, setIsCourseUploadPending] = useState(false);
+  const courseFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [backgroundUploadError, setBackgroundUploadError] = useState("");
+  const [isBackgroundUploadPending, setIsBackgroundUploadPending] = useState(false);
+  const backgroundFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedGalleryAssetId, setSelectedGalleryAssetId] = useState("");
+  const [selectedLibraryAssetForStepId, setSelectedLibraryAssetForStepId] = useState("");
   const [galleryAssetTitle, setGalleryAssetTitle] = useState("");
   const [galleryAssetDescription, setGalleryAssetDescription] = useState("");
   const [galleryAssetUrl, setGalleryAssetUrl] = useState("");
@@ -536,6 +576,11 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     setStepQuestionSuccessMessage(questionnaire?.successMessage ?? "");
   }, [selectedCourseStep]);
 
+  useEffect(() => {
+    setCourseUploadError("");
+    setBackgroundUploadError("");
+  }, [selectedStepId]);
+
   const allAssets = useMemo(() => product?.assets ?? [], [product?.assets]);
   const galleryAssets = useMemo(
     () =>
@@ -559,6 +604,10 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
   const selectedGalleryAsset = useMemo(
     () => galleryAssets.find((asset) => asset.id === selectedGalleryAssetId) ?? null,
     [galleryAssets, selectedGalleryAssetId]
+  );
+  const selectedLibraryAssetForStep = useMemo(
+    () => galleryAssets.find((asset) => asset.id === selectedLibraryAssetForStepId) ?? null,
+    [galleryAssets, selectedLibraryAssetForStepId]
   );
   const isFreeProduct = pricingMode === "FREE";
   const normalizedCurrency = normalizeCurrencyCode(currency);
@@ -620,35 +669,12 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     setIsLibraryUploadPending(true);
 
     try {
-      const tenantSlug =
-        typeof window === "undefined"
-          ? null
-          : window.localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY);
       const uploadErrors: string[] = [];
       let createdCount = 0;
 
       for (const [index, file] of files.entries()) {
         try {
-          const formData = new FormData();
-          formData.set("file", file);
-          formData.set("productId", productId);
-
-          const response = await fetch("/api/uploads", {
-            method: "POST",
-            body: formData,
-            headers: tenantSlug ? { "x-tenant-slug": tenantSlug } : undefined,
-          });
-
-          const responseText = await response.text();
-          const result = parseUploadResponse(responseText);
-
-          if (!response.ok) {
-            throw new Error(messageFromUploadResponse(response, responseText));
-          }
-
-          if (!result?.publicUrl || !result.assetType) {
-            throw new Error("Upload completed without a valid asset payload.");
-          }
+          const result = await uploadProductFile({ file, productId });
 
           const assetTitle = titleFromFileName(result.fileName ?? file.name);
           const isDownloadable =
@@ -692,6 +718,130 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
     } finally {
       setIsLibraryUploadPending(false);
     }
+  }
+
+  async function handleCourseFileUpload(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+
+    if (!files.length) return;
+    if (!productId || !selectedCourseStep) {
+      setCourseUploadError("Save the product and select a step before uploading files.");
+      return;
+    }
+
+    setCourseUploadError("");
+    setIsCourseUploadPending(true);
+
+    try {
+      const uploadErrors: string[] = [];
+      let createdCount = 0;
+
+      for (const [index, file] of files.entries()) {
+        try {
+          const result = await uploadProductFile({ file, productId });
+          const assetTitle = titleFromFileName(result.fileName ?? file.name);
+          const isDownloadable =
+            result.assetType === "PDF" || result.assetType === "FILE";
+
+          await createAssetMutation.mutateAsync({
+            productId,
+            stepId: selectedCourseStep.id,
+            moduleType: "COURSE",
+            placement: "STEP",
+            title: assetTitle,
+            description: undefined,
+            url: result.publicUrl,
+            type: result.assetType,
+            interactionMode: isDownloadable ? "DOWNLOAD" : "OPEN",
+            isDownloadable,
+            sortOrder: selectedStepAssets.length + index + 1,
+          });
+
+          createdCount += 1;
+        } catch (error) {
+          uploadErrors.push(
+            `${file.name}: ${error instanceof Error ? error.message : "Upload failed."}`,
+          );
+        }
+      }
+
+      if (uploadErrors.length) {
+        setCourseUploadError(
+          createdCount > 0
+            ? `Created ${createdCount} attachment${createdCount === 1 ? "" : "s"}, but some uploads failed. ${uploadErrors.join(" ")}`
+            : uploadErrors.join(" "),
+        );
+      }
+    } catch (error) {
+      setCourseUploadError(error instanceof Error ? error.message : "Upload failed.");
+    } finally {
+      setIsCourseUploadPending(false);
+    }
+  }
+
+  async function handleStepBackgroundUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+
+    if (!file) return;
+    if (!productId || !selectedCourseStep) {
+      setBackgroundUploadError("Save the product and select a step before uploading a background.");
+      return;
+    }
+
+    setBackgroundUploadError("");
+    setIsBackgroundUploadPending(true);
+
+    try {
+      const result = await uploadProductFile({ file, productId });
+
+      if (result.assetType !== "IMAGE") {
+        throw new Error("Step backgrounds must be uploaded as image files.");
+      }
+
+      setStepCoverImageUrl(result.publicUrl);
+    } catch (error) {
+      setBackgroundUploadError(error instanceof Error ? error.message : "Upload failed.");
+    } finally {
+      setIsBackgroundUploadPending(false);
+    }
+  }
+
+  async function handleAttachLibraryAssetToStep() {
+    if (!productId || !selectedCourseStep || !selectedLibraryAssetForStep) return;
+
+    const sourceMetadata =
+      selectedLibraryAssetForStep.metadata &&
+      typeof selectedLibraryAssetForStep.metadata === "object"
+        ? (selectedLibraryAssetForStep.metadata as Record<string, unknown>)
+        : {};
+
+    await createAssetMutation.mutateAsync({
+      productId,
+      stepId: selectedCourseStep.id,
+      moduleType: "COURSE",
+      placement: "STEP",
+      title: selectedLibraryAssetForStep.title,
+      description: selectedLibraryAssetForStep.description ?? undefined,
+      type: selectedLibraryAssetForStep.type as ProductAssetType,
+      url: selectedLibraryAssetForStep.url,
+      previewUrl: selectedLibraryAssetForStep.previewUrl ?? undefined,
+      thumbnailUrl: selectedLibraryAssetForStep.thumbnailUrl ?? undefined,
+      targetUrl: selectedLibraryAssetForStep.targetUrl ?? undefined,
+      openInNewTab: selectedLibraryAssetForStep.openInNewTab ?? true,
+      mimeType: selectedLibraryAssetForStep.mimeType ?? undefined,
+      isDownloadable: selectedLibraryAssetForStep.isDownloadable,
+      durationSeconds: selectedLibraryAssetForStep.durationSeconds ?? undefined,
+      interactionMode: selectedLibraryAssetForStep.interactionMode,
+      metadata: {
+        ...sourceMetadata,
+        sourceLibraryAssetId: selectedLibraryAssetForStep.id,
+      },
+      sortOrder: selectedStepAssets.length + 1,
+    });
+
+    setSelectedLibraryAssetForStepId("");
   }
 
   async function handleSaveProduct() {
@@ -1108,6 +1258,20 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                 <div className="space-y-4">
                   {selectedCourseStep ? (
                     <>
+                      <input
+                        ref={backgroundFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(event) => void handleStepBackgroundUpload(event)}
+                      />
+                      <input
+                        ref={courseFileInputRef}
+                        type="file"
+                        multiple
+                        className="hidden"
+                        onChange={(event) => void handleCourseFileUpload(event)}
+                      />
                       <div className="rounded-3xl border border-white/10 bg-black/25 p-5">
                         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                           <div>
@@ -1144,6 +1308,35 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                               onChange={(event) => setStepDescription(event.target.value)}
                               placeholder="Step description"
                             />
+                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-sm font-medium text-white">
+                                    Upload step background
+                                  </p>
+                                  <p className="mt-1 text-xs text-zinc-400">
+                                    Upload an image and we&apos;ll fill the background URL below.
+                                    Save the step after uploading to persist it.
+                                  </p>
+                                </div>
+                                <Button
+                                  className="h-10 rounded-xl border-white/10 bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/15 disabled:opacity-50"
+                                  disabled={
+                                    !productId ||
+                                    !selectedCourseStep ||
+                                    isBackgroundUploadPending
+                                  }
+                                  onClick={() => backgroundFileInputRef.current?.click()}
+                                >
+                                  {isBackgroundUploadPending ? "Uploading..." : "Choose image"}
+                                </Button>
+                              </div>
+                              {backgroundUploadError ? (
+                                <p className="mt-3 text-xs text-rose-300">
+                                  {backgroundUploadError}
+                                </p>
+                              ) : null}
+                            </div>
                             <input
                               className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-emerald-400/50"
                               value={stepCoverImageUrl}
@@ -1338,6 +1531,70 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
 
                         <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
                           <div className="space-y-3">
+                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                  <p className="text-sm font-medium text-white">
+                                    Upload step attachments
+                                  </p>
+                                  <p className="mt-1 text-xs text-zinc-400">
+                                    Upload images, videos, PDFs, and files directly into this
+                                    step.
+                                  </p>
+                                </div>
+                                <Button
+                                  className="h-10 rounded-xl border-white/10 bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/15 disabled:opacity-50"
+                                  disabled={
+                                    !productId ||
+                                    !selectedCourseStep ||
+                                    isCourseUploadPending ||
+                                    createAssetMutation.isPending
+                                  }
+                                  onClick={() => courseFileInputRef.current?.click()}
+                                >
+                                  {isCourseUploadPending ? "Uploading..." : "Choose files"}
+                                </Button>
+                              </div>
+                              {courseUploadError ? (
+                                <p className="mt-3 text-xs text-rose-300">{courseUploadError}</p>
+                              ) : null}
+                            </div>
+                            <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 p-3 text-xs text-zinc-500">
+                              Keep using the manual fields below for external URLs and links.
+                            </div>
+                            <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                              <p className="text-sm font-medium text-white">
+                                Attach from library
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-400">
+                                Reuse an existing library item inside this step without removing
+                                it from the library.
+                              </p>
+                              <select
+                                className="mt-3 h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                value={selectedLibraryAssetForStepId}
+                                onChange={(event) =>
+                                  setSelectedLibraryAssetForStepId(event.target.value)
+                                }
+                              >
+                                <option value="">Select a library item</option>
+                                {galleryAssets.map((asset) => (
+                                  <option key={asset.id} value={asset.id}>
+                                    {asset.title} ({asset.type})
+                                  </option>
+                                ))}
+                              </select>
+                              <Button
+                                className="mt-3 h-10 w-full rounded-xl border-white/10 bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/15 disabled:opacity-50"
+                                disabled={
+                                  !selectedLibraryAssetForStep ||
+                                  createAssetMutation.isPending
+                                }
+                                onClick={() => void handleAttachLibraryAssetToStep()}
+                              >
+                                Add library item to step
+                              </Button>
+                            </div>
                             <input
                               className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
                               value={courseAssetTitle}
@@ -1410,30 +1667,47 @@ export function ProductEditor({ mode, productId }: ProductEditorProps) {
                             </Button>
                           </div>
 
-                          <div className="space-y-2">
+                          <div className="grid gap-3 sm:grid-cols-2">
                             {selectedStepAssets.map((asset) => (
                               <div
                                 key={asset.id}
-                                className="rounded-2xl border border-white/10 bg-black/30 p-3"
+                                className="overflow-hidden rounded-2xl border border-white/10 bg-black/30"
                               >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-white">
-                                      [{asset.type}] {asset.title}
-                                    </p>
-                                    <p className="mt-1 truncate text-xs text-zinc-400">
-                                      {asset.url}
-                                    </p>
+                                <div
+                                  className="flex h-28 items-end border-b border-white/10 p-3"
+                                  style={{
+                                    backgroundImage:
+                                      asset.type === "IMAGE"
+                                        ? `linear-gradient(180deg, rgba(2,6,23,0.06), rgba(2,6,23,0.78)), url(${asset.url})`
+                                        : "linear-gradient(135deg, rgba(14,165,233,0.18), rgba(15,23,42,0.92))",
+                                    backgroundSize: "cover",
+                                    backgroundPosition: "center",
+                                  }}
+                                >
+                                  <span className="rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] font-medium tracking-[0.18em] text-zinc-200">
+                                    {asset.type}
+                                  </span>
+                                </div>
+                                <div className="p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-white">
+                                        {asset.title}
+                                      </p>
+                                      <p className="mt-1 line-clamp-2 break-all text-xs text-zinc-400">
+                                        {asset.url}
+                                      </p>
+                                    </div>
+                                    <Button
+                                      className="h-8 rounded-lg border-red-500/30 bg-red-500/80 px-2 text-[11px] font-semibold text-black hover:bg-red-400 disabled:opacity-50"
+                                      disabled={removeAssetMutation.isPending}
+                                      onClick={() =>
+                                        removeAssetMutation.mutate({ assetId: asset.id })
+                                      }
+                                    >
+                                      Remove
+                                    </Button>
                                   </div>
-                                  <Button
-                                    className="h-8 rounded-lg border-red-500/30 bg-red-500/80 px-2 text-[11px] font-semibold text-black hover:bg-red-400 disabled:opacity-50"
-                                    disabled={removeAssetMutation.isPending}
-                                    onClick={() =>
-                                      removeAssetMutation.mutate({ assetId: asset.id })
-                                    }
-                                  >
-                                    Remove
-                                  </Button>
                                 </div>
                               </div>
                             ))}

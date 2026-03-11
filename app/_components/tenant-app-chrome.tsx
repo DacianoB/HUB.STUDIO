@@ -56,6 +56,14 @@ export function TenantAppChrome({
   sidebarItemVariant = 'ghost',
   children
 }: TenantAppChromeProps) {
+  const tenantInitials = tenantName
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'HB';
+
   return (
     <div
       className={`relative flex overflow-hidden font-sans ${shellHeightClassName}`}
@@ -84,14 +92,36 @@ export function TenantAppChrome({
         itemVariant={sidebarItemVariant}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden pb-24 md:pb-0">
         <div
-          className="sticky top-4 z-20 mx-5 flex items-center gap-3 rounded-[var(--tenant-node-radius)] px-4 py-4 backdrop-blur-xl"
+          className="sticky top-3 z-20 mx-3 flex items-center gap-3 rounded-[var(--tenant-node-radius)] px-3 py-3 backdrop-blur-xl md:top-4 md:mx-5 md:px-4 md:py-4"
           style={{
             backgroundColor: `${tenantTheme.bgSecondary}f2`,
             border: '1px solid var(--tenant-border)'
           }}
         >
+          <button
+            type="button"
+            className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden border text-xs font-bold md:hidden"
+            style={{
+              borderRadius: 'var(--tenant-node-radius-sm)',
+              borderColor: 'var(--tenant-accent)',
+              backgroundColor: 'var(--tenant-accent)',
+              color: 'var(--tenant-button-text)'
+            }}
+            title={tenantName}
+          >
+            {tenantLogoUrl ? (
+              <img
+                src={tenantLogoUrl}
+                alt={tenantName}
+                className="h-8 w-8 object-contain"
+              />
+            ) : (
+              <span>{tenantInitials}</span>
+            )}
+          </button>
+
           <div className="group relative min-w-0 flex-1">
             <Search
               className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors"

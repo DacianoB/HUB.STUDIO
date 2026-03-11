@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Building2,
   ChevronDown,
+  KeyRound,
   LogIn,
   LogOut,
   Shield,
@@ -138,6 +139,7 @@ export function UserMenu({
   const canAccessAdmin = Boolean(
     isGlobalAdmin || tenantRole === 'OWNER' || tenantRole === 'ADMIN'
   );
+  const canAccessGlobalAdmin = Boolean(isGlobalAdmin);
   const selectedTenantSlug = pendingTenantSlug ?? tenantSlug ?? storedTenantSlug;
 
   async function handleTenantChange(nextSlug: string) {
@@ -304,25 +306,70 @@ export function UserMenu({
               </label>
             ) : null}
 
-            {canAccessAdmin ? (
-              <Link
-                href="/admin/dashboard"
-                onClick={() => setIsOpen(false)}
-                className="flex items-center justify-between border px-3 py-2.5 text-sm font-semibold transition-colors"
-                style={{
-                  borderRadius: 'var(--tenant-node-radius-sm)',
-                  borderColor: `${tenantTheme.accent}44`,
-                  backgroundColor: `${tenantTheme.accent}14`,
-                  color: 'var(--tenant-text-main)'
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <Shield className="h-4 w-4" style={{ color: tenantTheme.accent }} />
-                  Admin dashboard
-                </span>
-                <span style={{ color: 'var(--tenant-text-secondary)' }}>Open</span>
-              </Link>
+            {canAccessAdmin || canAccessGlobalAdmin ? (
+              <div className="space-y-2">
+                {canAccessAdmin ? (
+                  <Link
+                    href="/admin/dashboard"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center justify-between border px-3 py-2.5 text-sm font-semibold transition-colors"
+                    style={{
+                      borderRadius: 'var(--tenant-node-radius-sm)',
+                      borderColor: `${tenantTheme.accent}44`,
+                      backgroundColor: `${tenantTheme.accent}14`,
+                      color: 'var(--tenant-text-main)'
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Shield className="h-4 w-4" style={{ color: tenantTheme.accent }} />
+                      Admin dashboard
+                    </span>
+                    <span style={{ color: 'var(--tenant-text-secondary)' }}>Open</span>
+                  </Link>
+                ) : null}
+
+                {canAccessGlobalAdmin ? (
+                  <Link
+                    href="/admin/global/tenants"
+                    onClick={() => setIsOpen(false)}
+                    className="flex items-center justify-between border px-3 py-2.5 text-sm font-semibold transition-colors"
+                    style={{
+                      borderRadius: 'var(--tenant-node-radius-sm)',
+                      borderColor: `${tenantTheme.buttonPrimary}44`,
+                      backgroundColor: `${tenantTheme.buttonPrimary}14`,
+                      color: 'var(--tenant-text-main)'
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Sparkles
+                        className="h-4 w-4"
+                        style={{ color: tenantTheme.buttonPrimary }}
+                      />
+                      Global admin
+                    </span>
+                    <span style={{ color: 'var(--tenant-text-secondary)' }}>Open</span>
+                  </Link>
+                ) : null}
+              </div>
             ) : null}
+
+            <Link
+              href="/auth/set-password"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center justify-between border px-3 py-2.5 text-sm font-semibold transition-colors"
+              style={{
+                borderRadius: 'var(--tenant-node-radius-sm)',
+                borderColor: 'var(--tenant-border)',
+                backgroundColor: `${tenantTheme.bgMain}66`,
+                color: 'var(--tenant-text-main)'
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4" />
+                Local password
+              </span>
+              <span style={{ color: 'var(--tenant-text-secondary)' }}>Open</span>
+            </Link>
 
             <button
               type="button"

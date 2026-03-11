@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 interface SignInProps {
   mini?: boolean;
@@ -12,35 +12,52 @@ interface SignInProps {
 export function SignIn({ mini = false }: SignInProps) {
   const searchParams = useSearchParams();
   const callbackUrl = useMemo(() => searchParams.get("callbackUrl") ?? "/", [searchParams]);
+  const authError = searchParams.get("error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() =>
+    authError === "CredentialsSignin" ? "Email ou senha invalidos." : "",
+  );
   const [isLoadingCredentials, setIsLoadingCredentials] = useState(false);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
+
+  useEffect(() => {
+    setError(authError === "CredentialsSignin" ? "Email ou senha invalidos." : "");
+  }, [authError]);
 
   const handleCredentialsLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
     setIsLoadingCredentials(true);
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      callbackUrl,
-      redirect: false,
+    const response = await fetch("/api/auth/local-login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        callbackUrl,
+      }),
     });
+    const result = (await response.json().catch(() => null)) as
+      | {
+          ok?: boolean;
+          url?: string;
+          message?: string;
+        }
+      | null;
 
     setIsLoadingCredentials(false);
 
-    if (result?.error) {
-      setError("Email ou senha invalidos.");
+    if (!response.ok || !result?.ok) {
+      setError(result?.message ?? "Email ou senha invalidos.");
       return;
     }
 
-    if (result?.url) {
-      window.location.href = result.url;
-    }
+    window.location.assign(result.url ?? callbackUrl);
   };
 
   const handleGoogleLogin = async () => {
@@ -52,7 +69,8 @@ export function SignIn({ mini = false }: SignInProps) {
     <section className="w-full rounded-xl border border-white/10 bg-card p-6 text-white">
       {!mini && <h1 className="mb-1 text-2xl font-bold">Entrar</h1>}
       <p className="mb-6 text-sm text-muted-foreground">
-        Acesse sua conta com Google ou email e senha.
+        Acesse sua conta com Google ou email e senha. No primeiro acesso com email,
+        criamos sua conta local.
       </p>
 
       <button
@@ -90,7 +108,8 @@ export function SignIn({ mini = false }: SignInProps) {
             required
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="Sua senha"
+            minLength={8}
+            placeholder="Minimo de 8 caracteres"
             className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none ring-0 focus:border-primary"
           />
         </label>

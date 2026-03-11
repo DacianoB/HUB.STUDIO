@@ -232,6 +232,11 @@ function isTextNodeType(type: string) {
   return logicalNodeType(type) === "text";
 }
 
+function isStepViewerNodeType(type: string) {
+  const logical = logicalNodeType(type);
+  return logical === "step-viewer" || logical === "step_viewer";
+}
+
 function readLibraryLayoutStyle(props?: Record<string, unknown> | null): LibraryLayoutStyle {
   const value = typeof props?.layoutStyle === "string" ? props.layoutStyle : "";
   if (value === "uniform" || value === "masonry" || value === "pinterest") {
@@ -293,6 +298,10 @@ function readLibraryViewInGallery(props?: Record<string, unknown> | null) {
   return Boolean(props?.viewInGallery);
 }
 
+function readLibraryOpenInModal(props?: Record<string, unknown> | null) {
+  return Boolean(props?.openInModal);
+}
+
 function hashLibrarySeed(input: string) {
   let value = 0;
   for (let index = 0; index < input.length; index += 1) {
@@ -327,6 +336,7 @@ function buildLibraryViewProps(
   layoutStyle: LibraryLayoutStyle,
   randomness: LibraryRandomness,
   viewInGallery: boolean,
+  openInModal: boolean,
   assets: LibraryAssetSnapshot[],
   itemLayout: LibraryItemLayout
 ) {
@@ -335,6 +345,7 @@ function buildLibraryViewProps(
     layoutStyle,
     randomness,
     viewInGallery,
+    openInModal,
     assets,
     itemLayout,
   };
@@ -667,6 +678,7 @@ export function PagesDashboard() {
     DEFAULT_LIBRARY_RANDOMNESS
   );
   const [libraryViewInGallery, setLibraryViewInGallery] = useState(false);
+  const [libraryOpenInModal, setLibraryOpenInModal] = useState(false);
   const [libraryWidthOptionsText, setLibraryWidthOptionsText] = useState("1");
   const [libraryHeightOptionsText, setLibraryHeightOptionsText] = useState("6,8,10");
   const [textNodeTitle, setTextNodeTitle] = useState(DEFAULT_TEXT_NODE_TITLE);
@@ -904,6 +916,7 @@ export function PagesDashboard() {
     setLibraryLayoutStyle(DEFAULT_LIBRARY_LAYOUT_STYLE);
     setLibraryRandomness(DEFAULT_LIBRARY_RANDOMNESS);
     setLibraryViewInGallery(false);
+    setLibraryOpenInModal(false);
     setLibraryWidthOptionsText("1");
     setLibraryHeightOptionsText("6,8,10");
     setTextNodeTitle(DEFAULT_TEXT_NODE_TITLE);
@@ -937,6 +950,7 @@ export function PagesDashboard() {
     setLibraryLayoutStyle(readLibraryLayoutStyle(props));
     setLibraryRandomness(readLibraryRandomness(props));
     setLibraryViewInGallery(readLibraryViewInGallery(props));
+    setLibraryOpenInModal(readLibraryOpenInModal(props));
     const itemLayout = readLibraryItemLayout(props);
     setLibraryWidthOptionsText(itemLayout.w.join(","));
     setLibraryHeightOptionsText(itemLayout.h.join(","));
@@ -1046,6 +1060,7 @@ export function PagesDashboard() {
             DEFAULT_LIBRARY_LAYOUT_STYLE,
             DEFAULT_LIBRARY_RANDOMNESS,
             false,
+            false,
             selectedProductLibraryAssets,
             { w: [1], h: [6, 8, 10] }
           )
@@ -1064,6 +1079,13 @@ export function PagesDashboard() {
             DEFAULT_TEXT_NODE_TITLE_COLOR,
             DEFAULT_TEXT_NODE_SUBTITLE_COLOR
           )
+        : isStepViewerNodeType(nodeType)
+          ? selectedProductForNode
+            ? {
+                productId: selectedProductForNode,
+                title: "Course steps",
+              }
+            : {}
         : {};
 
     await addNodeMutation.mutateAsync({
@@ -1072,6 +1094,9 @@ export function PagesDashboard() {
       title: config.name ?? titleFromType(nodeType),
       type: nodeType,
       props,
+      productId: isStepViewerNodeType(nodeType)
+        ? selectedProductForNode || undefined
+        : undefined,
       position: {
         lg: { x: 0, y: baseY, w: width, h: height },
         sm: { x: 0, y: baseY, w: Math.min(width, 3), h: height },
@@ -1505,6 +1530,7 @@ export function PagesDashboard() {
                                   DEFAULT_LIBRARY_LAYOUT_STYLE,
                                   DEFAULT_LIBRARY_RANDOMNESS,
                                   false,
+                                  false,
                                   selectedProductLibraryAssets,
                                   { w: [1], h: [6, 8, 10] }
                                 ),
@@ -1706,6 +1732,38 @@ export function PagesDashboard() {
                             </>
                           ) : null}
 
+                          {isStepViewerNodeType(selectedNode.type) ? (
+                            <>
+                              <select
+                                className="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none transition focus:border-sky-400/50"
+                                value={selectedProductForNode}
+                                onChange={(event) => {
+                                  setSelectedProductForNode(event.target.value);
+                                  setSelectedStepForNode("");
+                                }}
+                              >
+                                <option value="">Select product...</option>
+                                {(productsQuery.data ?? []).map((product) => (
+                                  <option key={product.id} value={product.id}>
+                                    {product.name}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">
+                                  Step viewer product
+                                </p>
+                                <p className="mt-2 text-lg font-semibold text-white">
+                                  {selectedProductPreview?.name ?? "Select a product"}
+                                </p>
+                                <p className="mt-1 text-sm text-zinc-400">
+                                  This node renders the selected product&apos;s course step flow.
+                                </p>
+                              </div>
+                            </>
+                          ) : null}
+
                           {isLibraryViewNodeType(selectedNode.type) ? (
                             <>
                               <select
@@ -1761,11 +1819,29 @@ export function PagesDashboard() {
                                   <input
                                     type="checkbox"
                                     checked={libraryViewInGallery}
-                                    onChange={(event) =>
-                                      setLibraryViewInGallery(event.target.checked)
-                                    }
+                                    onChange={(event) => {
+                                      const checked = event.target.checked;
+                                      setLibraryViewInGallery(checked);
+                                      if (checked) {
+                                        setLibraryOpenInModal(false);
+                                      }
+                                    }}
                                   />
                                   Open selected item inside the gallery
+                                </label>
+                                <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3 text-sm text-zinc-300">
+                                  <input
+                                    type="checkbox"
+                                    checked={libraryOpenInModal}
+                                    onChange={(event) => {
+                                      const checked = event.target.checked;
+                                      setLibraryOpenInModal(checked);
+                                      if (checked) {
+                                        setLibraryViewInGallery(false);
+                                      }
+                                    }}
+                                  />
+                                  Open selected item in a modal
                                 </label>
                               </div>
 
@@ -1778,8 +1854,9 @@ export function PagesDashboard() {
                                 </p>
                                 <p className="mt-1 text-sm text-zinc-400">
                                   This node renders the selected product library as real page-grid
-                                  items. When the option above is active, opening an item keeps it
-                                  in the same gallery page and moves the selected asset to the top.
+                                  items. Gallery mode keeps the selected asset in the same page,
+                                  while modal mode opens the asset in an overlay like the step
+                                  viewer.
                                 </p>
                               </div>
                             </>
@@ -1981,6 +2058,7 @@ export function PagesDashboard() {
                                 updateNodeMutation.isPending ||
                                 ((selectedNode.type === "node-product" ||
                                   selectedNode.type === "node-course-step" ||
+                                  isStepViewerNodeType(selectedNode.type) ||
                                   isLibraryViewNodeType(selectedNode.type)) &&
                                   !selectedProductForNode) ||
                                 (selectedNode.type === "node-course-step" &&
@@ -2009,12 +2087,21 @@ export function PagesDashboard() {
                                   parsed.stepId = selectedStepForNode;
                                 }
 
+                                if (isStepViewerNodeType(selectedNode.type)) {
+                                  parsed.productId = selectedProductForNode;
+                                  parsed.title =
+                                    typeof parsed.title === "string" && parsed.title.trim()
+                                      ? parsed.title
+                                      : "Course steps";
+                                }
+
                                 if (isLibraryViewNodeType(selectedNode.type)) {
                                   parsed = buildLibraryViewProps(
                                     selectedProductForNode,
                                     libraryLayoutStyle,
                                     libraryRandomness,
                                     libraryViewInGallery,
+                                    libraryOpenInModal,
                                     selectedProductLibraryAssets,
                                     {
                                       w: parseLibraryOptionsInput(
@@ -2059,6 +2146,7 @@ export function PagesDashboard() {
                                   productId:
                                     selectedNode.type === "node-product" ||
                                     selectedNode.type === "node-course-step" ||
+                                    isStepViewerNodeType(selectedNode.type) ||
                                     isLibraryViewNodeType(selectedNode.type)
                                       ? selectedProductForNode || null
                                       : isTextNodeType(selectedNode.type) &&

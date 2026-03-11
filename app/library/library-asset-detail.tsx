@@ -27,6 +27,7 @@ type LibraryAssetDetailPanelProps = {
   embedded?: boolean;
   inGrid?: boolean;
   initialAsset?: InitialAssetData;
+  onBack?: () => void;
 };
 
 type AssetMetadata = {
@@ -99,7 +100,8 @@ export function LibraryAssetDetailPanel({
   pageName,
   embedded = false,
   inGrid = false,
-  initialAsset
+  initialAsset,
+  onBack
 }: LibraryAssetDetailPanelProps) {
   const router = useRouter();
   const utils = api.useUtils();
@@ -193,6 +195,46 @@ export function LibraryAssetDetailPanel({
       dragSessionRef.current = null;
     }
   }, [isExpanded]);
+
+  useEffect(() => {
+    if (!isExpanded || typeof window === 'undefined') {
+      return;
+    }
+
+    const resetExpandedZoom = () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
+      }
+
+      lastTouchTapRef.current = null;
+      activePointerIdRef.current = null;
+      dragSessionRef.current = null;
+      setPanOffset({ x: 0, y: 0 });
+      setZoomStep(0);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (zoomStep > 0) {
+        resetExpandedZoom();
+        return;
+      }
+
+      resetExpandedZoom();
+      setIsExpanded(false);
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isExpanded, zoomStep]);
 
   useEffect(() => {
     return () => {
@@ -379,7 +421,11 @@ export function LibraryAssetDetailPanel({
     const relativeX = clientX - (bounds.left + bounds.width / 2);
     const relativeY = clientY - (bounds.top + bounds.height / 2);
     setPanOffset((current) =>
-      clampPan(current.x - relativeX * 0.35, current.y - relativeY * 0.35, zoomScale)
+      clampPan(
+        current.x - relativeX * 0.35,
+        current.y - relativeY * 0.35,
+        zoomScale
+      )
     );
   };
 
@@ -462,9 +508,7 @@ export function LibraryAssetDetailPanel({
     }
   };
 
-  const handlePointerDown = (
-    event: ReactPointerEvent<HTMLButtonElement>
-  ) => {
+  const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
     activePointerIdRef.current = event.pointerId;
     lastPointerTypeRef.current = event.pointerType;
     dragSessionRef.current = {
@@ -479,9 +523,7 @@ export function LibraryAssetDetailPanel({
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const handlePointerMove = (
-    event: ReactPointerEvent<HTMLButtonElement>
-  ) => {
+  const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const session = dragSessionRef.current;
     if (
       !session ||
@@ -499,13 +541,15 @@ export function LibraryAssetDetailPanel({
     }
 
     setPanOffset(
-      clampPan(session.startPanX + deltaX, session.startPanY + deltaY, zoomScale)
+      clampPan(
+        session.startPanX + deltaX,
+        session.startPanY + deltaY,
+        zoomScale
+      )
     );
   };
 
-  const handlePointerUp = (
-    event: ReactPointerEvent<HTMLButtonElement>
-  ) => {
+  const handlePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
     finishPointer(
       event.currentTarget,
       event.pointerId,
@@ -514,9 +558,7 @@ export function LibraryAssetDetailPanel({
     );
   };
 
-  const handlePointerCancel = (
-    event: ReactPointerEvent<HTMLButtonElement>
-  ) => {
+  const handlePointerCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (activePointerIdRef.current === event.pointerId) {
       activePointerIdRef.current = null;
       releasePointerCapture(event.currentTarget, event.pointerId);
@@ -525,7 +567,11 @@ export function LibraryAssetDetailPanel({
   };
 
   const handleMouseMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!isZoomed || event.pointerType !== 'mouse' || !zoomViewportRef.current) {
+    if (
+      !isZoomed ||
+      event.pointerType !== 'mouse' ||
+      !zoomViewportRef.current
+    ) {
       return;
     }
 
@@ -544,13 +590,19 @@ export function LibraryAssetDetailPanel({
 
   if (inGrid) {
     return (
-      <section className="flex h-full flex-col rounded-[var(--tenant-node-radius)] border border-[var(--tenant-border)] bg-[var(--tenant-card-bg)] p-4 text-black">
+      <section className="flex h-full flex-col rounded-[var(--tenant-node-radius)]  bg-[var(--tenant-card-bg)] p-4 text-black">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="flex shrink-0 items-center gap-2">
               <PinActionButton
                 label={`Back to ${pageName}`}
-                onClick={() => router.push(backHref as any)}
+                onClick={() => {
+                  if (onBack) {
+                    onBack();
+                    return;
+                  }
+                  router.push(backHref as any);
+                }}
                 className="w-11 bg-transparent px-0"
               >
                 <ArrowLeft className="h-5 w-5" />
@@ -799,7 +851,10 @@ export function LibraryAssetDetailPanel({
                             }
 
                             if (lastPointerTypeRef.current === 'mouse') {
-                              scheduleMouseClickZoom(event.clientX, event.clientY);
+                              scheduleMouseClickZoom(
+                                event.clientX,
+                                event.clientY
+                              );
                             }
                           }}
                           onDoubleClick={(event) => {

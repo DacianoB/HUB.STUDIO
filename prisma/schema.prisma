@@ -94,6 +94,7 @@ model User {
   isGlobalAdmin          Boolean                @default(false)
   emailVerified          DateTime?
   image                  String?
+  passwordHash           String?
   accounts               Account[]
   sessions               Session[]
   createdTenants         Tenant[]               @relation("TenantCreatedBy")

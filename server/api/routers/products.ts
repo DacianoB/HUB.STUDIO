@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -35,6 +36,16 @@ type StepMetadata = {
   questionnaire?: StepQuestionnaire;
 };
 
+type ModuleSettingsRecord = Prisma.InputJsonObject;
+
+function readSourceLibraryAssetId(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const candidate = metadata as Record<string, unknown>;
+  return typeof candidate.sourceLibraryAssetId === "string"
+    ? candidate.sourceLibraryAssetId
+    : undefined;
+}
+
 const moduleConfigSchema = z.object({
   moduleType: moduleTypeSchema,
   isEnabled: z.boolean().default(true),
@@ -67,6 +78,7 @@ const defaultModuleCatalog = [
       allowedAssetTypes: ["VIDEO", "PDF", "IMAGE", "LINK", "FILE"],
       allowDownloads: true,
       allowExternalLinks: true,
+      systemTags: [],
     },
   },
   {
@@ -80,6 +92,114 @@ const defaultModuleCatalog = [
     },
   },
 ];
+
+function normalizeModuleSettings(settings: unknown): ModuleSettingsRecord {
+  if (!settings || typeof settings !== "object") {
+    return {};
+  }
+  return { ...(settings as ModuleSettingsRecord) };
+}
+
+function normalizeSystemTag(value: unknown) {
+  if (typeof value !== "string") return null;
+
+  const normalized = value.replace(/^#tag\s*/i, "").trim().toLowerCase();
+  if (!normalized) return null;
+  return `#tag ${normalized}`;
+}
+
+function readLibrarySystemTags(settings: unknown) {
+  const raw = normalizeModuleSettings(settings).systemTags;
+  if (!Array.isArray(raw)) return [] as string[];
+
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  for (const value of raw) {
+    const normalized = normalizeSystemTag(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    tags.push(normalized);
+  }
+
+  return tags;
+}
+
+function normalizeTenantModuleSettings(
+  moduleType: "LIBRARY" | "COURSE",
+  settings: unknown,
+) {
+  const normalized = normalizeModuleSettings(settings);
+
+  if (moduleType === "LIBRARY") {
+    return {
+      ...normalized,
+      systemTags: readLibrarySystemTags(normalized),
+    };
+  }
+
+  return normalized;
+}
+
+function isLibraryAsset(asset: {
+  stepId?: string | null;
+  moduleType?: string | null;
+  placement?: string | null;
+}) {
+  if (asset.stepId) return false;
+  if (asset.moduleType === "COURSE") return false;
+  if (asset.placement === "STEP") return false;
+  return true;
+}
+
+function attachLibrarySystemTags<
+  T extends {
+    stepId?: string | null;
+    moduleType?: string | null;
+    placement?: string | null;
+  },
+>(asset: T, systemTags: string[]) {
+  return {
+    ...asset,
+    systemTags: isLibraryAsset(asset) ? systemTags : [],
+  };
+}
+
+async function readTenantLibrarySystemTags(
+  db: {
+    tenantModuleCapability: {
+      findUnique: (args: {
+        where: {
+          tenantId_moduleType: {
+            tenantId: string;
+            moduleType: "LIBRARY";
+          };
+        };
+        select: { settings: true };
+      }) => Promise<{ settings: unknown } | null>;
+    };
+  },
+  tenantId: string,
+) {
+  const capability = await db.tenantModuleCapability.findUnique({
+    where: {
+      tenantId_moduleType: {
+        tenantId,
+        moduleType: "LIBRARY",
+      },
+    },
+    select: {
+      settings: true,
+    },
+  });
+
+  const mergedSettings = {
+    ...normalizeModuleSettings(defaultModuleCatalog[0].defaultSettings),
+    ...normalizeTenantModuleSettings("LIBRARY", capability?.settings),
+  };
+
+  return readLibrarySystemTags(mergedSettings);
+}
 
 function slugify(input: string) {
   return input
@@ -310,45 +430,51 @@ export const productsRouter = createTRPCRouter({
   byId: tenantProcedure
     .input(z.object({ productId: z.string().cuid() }))
     .query(async ({ ctx, input }) => {
-      const product = await ctx.db.product.findFirst({
-        where: { id: input.productId, tenantId: ctx.tenantId },
-        include: {
-          moduleConfigs: {
-            orderBy: { sortOrder: "asc" },
+      const [product, librarySystemTags] = await Promise.all([
+        ctx.db.product.findFirst({
+          where: { id: input.productId, tenantId: ctx.tenantId },
+          include: {
+            moduleConfigs: {
+              orderBy: { sortOrder: "asc" },
+            },
+            features: { orderBy: { sortOrder: "asc" } },
+            steps: { orderBy: { sortOrder: "asc" } },
+            assets: { orderBy: { sortOrder: "asc" } },
           },
-          features: { orderBy: { sortOrder: "asc" } },
-          steps: { orderBy: { sortOrder: "asc" } },
-          assets: { orderBy: { sortOrder: "asc" } },
-        },
-      });
+        }),
+        readTenantLibrarySystemTags(ctx.db, ctx.tenantId),
+      ]);
       if (!product) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
       }
-      return product;
+      return {
+        ...product,
+        assets: product.assets.map((asset) => attachLibrarySystemTags(asset, librarySystemTags)),
+      };
     }),
 
   libraryAssetsByProductId: publicTenantProcedure
     .input(z.object({ productId: z.string().cuid() }))
     .query(async ({ ctx, input }) => {
-      const product = await ctx.db.product.findFirst({
-        where: { id: input.productId, tenantId: ctx.tenantId },
-        select: {
-          id: true,
-          assets: {
-            orderBy: { sortOrder: "asc" },
+      const [product, librarySystemTags] = await Promise.all([
+        ctx.db.product.findFirst({
+          where: { id: input.productId, tenantId: ctx.tenantId },
+          select: {
+            id: true,
+            assets: {
+              orderBy: { sortOrder: "asc" },
+            },
           },
-        },
-      });
+        }),
+        readTenantLibrarySystemTags(ctx.db, ctx.tenantId),
+      ]);
       if (!product) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Product not found." });
       }
 
-      return (product.assets as Array<Record<string, unknown>>).filter((asset) => {
-        if (asset.stepId) return false;
-        if (asset.moduleType === "COURSE") return false;
-        if (asset.placement === "STEP") return false;
-        return true;
-      });
+      return product.assets
+        .filter((asset) => isLibraryAsset(asset))
+        .map((asset) => attachLibrarySystemTags(asset, librarySystemTags));
     }),
 
   libraryAssetById: publicTenantProcedure
@@ -359,22 +485,25 @@ export const productsRouter = createTRPCRouter({
       })
     )
     .query(async ({ ctx, input }) => {
-      const asset = await ctx.db.productAsset.findFirst({
-        where: {
-          id: input.assetId,
-          tenantId: ctx.tenantId,
-          stepId: null,
-        },
-        include: {
-          product: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
+      const [asset, librarySystemTags] = await Promise.all([
+        ctx.db.productAsset.findFirst({
+          where: {
+            id: input.assetId,
+            tenantId: ctx.tenantId,
+            stepId: null,
+          },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
             },
           },
-        },
-      });
+        }),
+        readTenantLibrarySystemTags(ctx.db, ctx.tenantId),
+      ]);
       if (!asset) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Library asset not found." });
       }
@@ -454,7 +583,7 @@ export const productsRouter = createTRPCRouter({
       })();
 
       return {
-        ...asset,
+        ...attachLibrarySystemTags(asset, librarySystemTags),
         stats: {
           views,
           downloads,
@@ -544,14 +673,19 @@ export const productsRouter = createTRPCRouter({
             : null,
           assets: step.assets.map((asset) => ({
             id: asset.id,
+            productId: asset.productId,
             title: asset.title,
             description: asset.description,
             type: asset.type,
             url: asset.url,
+            previewUrl: asset.previewUrl,
+            thumbnailUrl: asset.thumbnailUrl,
             targetUrl: asset.targetUrl,
             openInNewTab: asset.openInNewTab,
             interactionMode: asset.interactionMode,
             isDownloadable: asset.isDownloadable,
+            metadata: asset.metadata,
+            sourceLibraryAssetId: readSourceLibraryAssetId(asset.metadata),
           })),
         };
       });
@@ -652,12 +786,16 @@ export const productsRouter = createTRPCRouter({
       const current = byType.get(entry.moduleType) as
         | { isEnabled: boolean; settings: Record<string, unknown> | null }
         | undefined;
+      const mergedSettings = {
+        ...normalizeModuleSettings(entry.defaultSettings),
+        ...normalizeTenantModuleSettings(entry.moduleType, current?.settings),
+      };
       return {
         moduleType: entry.moduleType,
         label: entry.label,
         description: entry.description,
         isEnabled: current?.isEnabled ?? true,
-        settings: current?.settings ?? entry.defaultSettings,
+        settings: mergedSettings,
       };
     });
   }),
@@ -671,6 +809,8 @@ export const productsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const normalizedSettings = normalizeTenantModuleSettings(input.moduleType, input.settings);
+
       return ctx.db.tenantModuleCapability.upsert({
         where: {
           tenantId_moduleType: {
@@ -680,13 +820,13 @@ export const productsRouter = createTRPCRouter({
         },
         update: {
           isEnabled: input.isEnabled,
-          settings: input.settings,
+          settings: normalizedSettings,
         },
         create: {
           tenantId: ctx.tenantId,
           moduleType: input.moduleType,
           isEnabled: input.isEnabled,
-          settings: input.settings,
+          settings: normalizedSettings,
         },
       });
     }),

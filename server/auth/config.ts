@@ -1,20 +1,15 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import type { NextAuthOptions } from "next-auth";
-import { z } from "zod";
 
 import { db } from "~/server/db";
-
-const credentialsSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(4),
-});
+import { AUTH_SESSION_MAX_AGE_SECONDS } from "~/server/auth/local-session";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(db),
   session: {
     strategy: "database",
+    maxAge: AUTH_SESSION_MAX_AGE_SECONDS,
   },
   pages: {
     signIn: "/auth/signin",
@@ -28,26 +23,6 @@ export const authOptions: NextAuthOptions = {
           }),
         ]
       : []),
-    CredentialsProvider({
-      name: "Credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
-      async authorize(credentials) {
-        const parsed = credentialsSchema.safeParse(credentials);
-        if (!parsed.success) return null;
-
-        // Clean skeleton: accept any valid credentials and upsert a local user.
-        const { email } = parsed.data;
-        const user = await db.user.upsert({
-          where: { email },
-          update: {},
-          create: { email, name: email.split("@")[0] ?? "User" },
-        });
-        return user;
-      },
-    }),
   ],
   callbacks: {
     session: async ({ session, user }) => {

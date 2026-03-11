@@ -66,6 +66,7 @@ type LibraryAssetSnapshot = {
   title: string;
   url: string;
   type: string;
+  systemTags?: string[];
   targetUrl?: string | null;
   openInNewTab?: boolean | null;
   previewUrl?: string | null;
@@ -138,6 +139,11 @@ function toLibraryAssetSnapshot(
     title: String(asset.title ?? ''),
     url: String(asset.url ?? ''),
     type: String(asset.type ?? 'FILE'),
+    systemTags: Array.isArray(asset.systemTags)
+      ? asset.systemTags.filter(
+          (tag): tag is string => typeof tag === 'string' && Boolean(tag.trim())
+        )
+      : [],
     targetUrl: typeof asset.targetUrl === 'string' ? asset.targetUrl : null,
     openInNewTab:
       typeof asset.openInNewTab === 'boolean' ? asset.openInNewTab : null,
@@ -202,6 +208,10 @@ function readLibraryItemLayout(
     w: widths.length ? widths : [1],
     h: heights.length ? heights : [6, 8, 10]
   };
+}
+
+function readLibraryOpenInModal(props?: Record<string, unknown>) {
+  return Boolean(props?.openInModal);
 }
 
 function hashLibrarySeed(input: string) {
@@ -289,6 +299,7 @@ function filterStoredLayoutEntries(
 function expandLibraryViewItems(
   items: RuntimeItem[],
   sourcePageSlug?: string,
+  sourcePageName?: string,
   liveAssetsByProductId?: Map<string, LibraryAssetSnapshot[]>,
   breakpoint: StoredLayoutBreakpoint = 'lg',
   layoutById?: Map<string, GridLayoutItem>,
@@ -392,6 +403,7 @@ function expandLibraryViewItems(
         h: item.h
       };
     const itemLayout = readLibraryItemLayout(item.props);
+    const openInModal = readLibraryOpenInModal(item.props);
     const widths = itemLayout.w.map((value) =>
       Math.max(1, Math.min(value, activeCols))
     );
@@ -440,7 +452,9 @@ function expandLibraryViewItems(
         h,
         props: {
           asset,
+          openInModal,
           sourceNodeId: item.i,
+          sourcePageName: sourcePageName || 'Library',
           sourcePageSlug: normalizedSourcePageSlug || undefined
         }
       } satisfies RuntimeItem;
@@ -882,6 +896,7 @@ function DynamicGridCanvas({
       ...expandLibraryViewItems(
         filteredItems,
         preset.slug,
+        preset.name,
         liveLibraryAssetsByProductId,
         activeStoredBreakpoint,
         new Map(
@@ -904,6 +919,7 @@ function DynamicGridCanvas({
     filteredItems,
     searchNodeItems,
     isAdminPreview,
+    preset.name,
     preset.slug,
     liveLibraryAssetsByProductId,
     activeStoredBreakpoint,
@@ -950,7 +966,7 @@ function DynamicGridCanvas({
       searchDisabled={isAdminPreview}
       shellHeightClassName={isAdminPreview ? 'h-[820px]' : 'h-screen'}
     >
-      <div className="flex h-fit items-center gap-2 px-6 py-4 mt-4">
+      <div className="flex h-fit items-center gap-2 px-6 py-2 mt-7">
         {presetNavParentKey ? (
           <button
             type="button"
@@ -1043,7 +1059,7 @@ function DynamicGridCanvas({
         })}
       </div>
 
-      <main className="relative mx-auto flex-1 w-full px-4 pb-4">
+      <main className="relative mx-auto flex-1 w-full px-4 pb-4 max-md:px-0">
         <style>{`
             .layout .react-grid-placeholder {
               background: rgba(255, 255, 255, 0.25) !important;

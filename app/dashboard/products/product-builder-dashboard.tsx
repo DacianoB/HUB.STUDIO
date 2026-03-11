@@ -240,6 +240,43 @@ function readFeatureModuleType(feature: ProductFeatureRecord) {
     : null;
 }
 
+function normalizeSystemTag(value: string) {
+  const normalized = value.replace(/^#tag\s*/i, '').trim().toLowerCase();
+  return normalized ? `#tag ${normalized}` : '';
+}
+
+function readSystemTags(settings: Record<string, unknown> | null | undefined) {
+  const raw = settings?.systemTags;
+  if (!Array.isArray(raw)) return [] as string[];
+
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  for (const value of raw) {
+    if (typeof value !== 'string') continue;
+    const normalized = normalizeSystemTag(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    tags.push(normalized);
+  }
+
+  return tags;
+}
+
+function parseSystemTagsInput(value: string) {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  for (const entry of value.split(/[\r\n,]+/)) {
+    const normalized = normalizeSystemTag(entry);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    tags.push(normalized);
+  }
+
+  return tags;
+}
+
 function readEditableByUser(page: unknown) {
   if (!page || typeof page !== 'object') return false;
   return Boolean((page as { editableByUser?: boolean }).editableByUser);
@@ -320,6 +357,7 @@ export function ProductBuilderDashboard() {
     COURSE: true
   });
   const [libraryAllowDownloads, setLibraryAllowDownloads] = useState(true);
+  const [librarySystemTagsDraft, setLibrarySystemTagsDraft] = useState<string | null>(null);
   const [courseLockSequential, setCourseLockSequential] = useState(true);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [selectedProductEditorView, setSelectedProductEditorView] =
@@ -543,6 +581,25 @@ export function ProductBuilderDashboard() {
       ),
     [tenantModuleCatalog]
   );
+  const libraryTenantModule = useMemo(
+    () =>
+      tenantModuleCatalog.find(
+        (entry) => entry.moduleType === 'LIBRARY'
+      ) as
+        | {
+            moduleType: 'LIBRARY';
+            isEnabled: boolean;
+            settings?: Record<string, unknown> | null;
+          }
+        | undefined,
+    [tenantModuleCatalog]
+  );
+  const librarySystemTagsValue = useMemo(
+    () =>
+      librarySystemTagsDraft ??
+      readSystemTags(libraryTenantModule?.settings).join('\n'),
+    [librarySystemTagsDraft, libraryTenantModule]
+  );
   const availableFeatureBlueprints = useMemo(() => {
     if (!selectedProduct) return [] as FeatureBlueprint[];
     const existingTitles = new Set(
@@ -615,6 +672,7 @@ export function ProductBuilderDashboard() {
   const updateTenantModuleCapabilityMutation =
     api.products.updateTenantModuleCapability.useMutation({
       onSuccess: async () => {
+        setLibrarySystemTagsDraft(null);
         await utils.products.tenantModuleCatalog.invalidate();
       }
     });
@@ -1392,6 +1450,46 @@ export function ProductBuilderDashboard() {
                     {moduleEntry.label}: {moduleEntry.isEnabled ? 'Enabled' : 'Disabled'}
                   </Button>
                 ))}
+              </div>
+              <div className="mt-4 rounded-lg border border-zinc-800 bg-black/20 p-3">
+                <label className="block text-xs font-medium text-zinc-200">
+                  Hidden library system tags
+                </label>
+                <p className="mt-1 text-[11px] text-zinc-500">
+                  Added by tenant config, returned with library items for future filtering, and
+                  not rendered to end users.
+                </p>
+                <textarea
+                  value={librarySystemTagsValue}
+                  onChange={(event) => setLibrarySystemTagsDraft(event.target.value)}
+                  placeholder="#tag featured&#10;#tag premium"
+                  className="mt-3 min-h-24 w-full rounded-md border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-xs text-zinc-100 outline-none transition focus:border-zinc-600"
+                />
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className="text-[11px] text-zinc-500">
+                    One tag per line or comma separated.
+                  </p>
+                  <Button
+                    type="button"
+                    className="h-9 border-zinc-700 bg-zinc-900 px-3 text-xs text-zinc-100 hover:bg-zinc-800 disabled:opacity-50"
+                    disabled={
+                      updateTenantModuleCapabilityMutation.isPending || !libraryTenantModule
+                    }
+                    onClick={() => {
+                      if (!libraryTenantModule) return;
+                      updateTenantModuleCapabilityMutation.mutate({
+                        moduleType: 'LIBRARY',
+                        isEnabled: libraryTenantModule.isEnabled,
+                        settings: {
+                          ...(libraryTenantModule.settings ?? {}),
+                          systemTags: parseSystemTagsInput(librarySystemTagsValue)
+                        }
+                      });
+                    }}
+                  >
+                    Save hidden tags
+                  </Button>
+                </div>
               </div>
             </div>
 
