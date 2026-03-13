@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { LayoutGroup, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
@@ -224,9 +224,11 @@ function normalizeLibraryTag(tag: string) {
   return tag.trim().toLowerCase();
 }
 
-function readComparableLibraryTags(asset?: {
-  tags?: string[];
-} | null) {
+function readComparableLibraryTags(
+  asset?: {
+    tags?: string[];
+  } | null
+) {
   if (!asset?.tags?.length) return [] as string[];
 
   const seen = new Set<string>();
@@ -322,6 +324,17 @@ function getStoredBreakpointKey(
   return 'lg';
 }
 
+function getResponsiveBreakpointKeyFromWidth(
+  width: number
+): keyof typeof GRID_BREAKPOINTS {
+  if (width >= GRID_BREAKPOINTS.xl) return 'xl';
+  if (width >= GRID_BREAKPOINTS.lg) return 'lg';
+  if (width >= GRID_BREAKPOINTS.md) return 'md';
+  if (width >= GRID_BREAKPOINTS.sm) return 'sm';
+  if (width >= GRID_BREAKPOINTS.xs) return 'xs';
+  return 'xxs';
+}
+
 function clampGridItem(position: GridLayoutItem, cols: number): GridLayoutItem {
   const w = Math.max(1, Math.min(position.w, cols));
   const x = Math.max(0, Math.min(position.x, Math.max(0, cols - w)));
@@ -362,6 +375,29 @@ function filterStoredLayoutEntries(
     }));
 }
 
+function areGridLayoutItemsEqual(
+  left: GridLayoutItem[],
+  right: GridLayoutItem[]
+) {
+  if (left.length !== right.length) return false;
+
+  const rightById = new Map(right.map((entry) => [entry.i, entry]));
+  for (const leftEntry of left) {
+    const rightEntry = rightById.get(leftEntry.i);
+    if (!rightEntry) return false;
+    if (
+      leftEntry.x !== rightEntry.x ||
+      leftEntry.y !== rightEntry.y ||
+      leftEntry.w !== rightEntry.w ||
+      leftEntry.h !== rightEntry.h
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function expandLibraryViewItems(
   items: RuntimeItem[],
   sourcePageSlug?: string,
@@ -369,24 +405,28 @@ function expandLibraryViewItems(
   liveAssetsByProductId?: Map<string, LibraryAssetSnapshot[]>,
   breakpoint: StoredLayoutBreakpoint = 'lg',
   layoutById?: Map<string, GridLayoutItem>,
-  embeddedLibraryAsset?: DynamicGridProps['embeddedLibraryAsset']
+  embeddedLibraryAsset?: DynamicGridProps['embeddedLibraryAsset'],
+  activeColsOverride?: number
 ) {
   const regularItems: RuntimeItem[] = [];
   const librarySources: RuntimeItem[] = [];
   const normalizedSourcePageSlug = normalizeSlug(sourcePageSlug ?? '');
-  const activeCols =
-    breakpoint === 'lg'
-      ? GRID_COLS.lg
-      : breakpoint === 'sm'
-        ? GRID_COLS.sm
-        : GRID_COLS.xs;
+  const activeCols = Math.max(
+    1,
+    activeColsOverride ??
+      (breakpoint === 'lg'
+        ? GRID_COLS.lg
+        : breakpoint === 'sm'
+          ? GRID_COLS.sm
+          : GRID_COLS.xs)
+  );
   const detailWidth =
     breakpoint === 'lg'
       ? Math.max(3, activeCols - 2)
       : breakpoint === 'sm'
         ? Math.max(2, activeCols - 1)
         : activeCols;
-  const detailHeight = breakpoint === 'lg' ? 14 : breakpoint === 'sm' ? 22 : 20;
+  const detailHeight = breakpoint === 'lg' ? 14 : breakpoint === 'sm' ? 14 : 14;
 
   for (const item of items) {
     if (isLibraryViewNodeType(item.type)) {
@@ -396,30 +436,34 @@ function expandLibraryViewItems(
     regularItems.push(item);
   }
 
-  const occupied = new Set<string>();
+  // Pinterest-style placement: place each next card in the shortest column group.
+  const columnHeights = Array.from({ length: activeCols }, () => 0);
   const occupy = (x: number, y: number, w: number, h: number) => {
+    const nextHeight = y + h;
     for (let xi = x; xi < x + w; xi += 1) {
-      for (let yi = y; yi < y + h; yi += 1) {
-        occupied.add(`${xi}:${yi}`);
-      }
+      columnHeights[xi] = Math.max(columnHeights[xi] ?? 0, nextHeight);
     }
   };
-  const canPlace = (x: number, y: number, w: number, h: number) => {
-    if (x < 0 || x + w > activeCols) return false;
-    for (let xi = x; xi < x + w; xi += 1) {
-      for (let yi = y; yi < y + h; yi += 1) {
-        if (occupied.has(`${xi}:${yi}`)) return false;
+  const findPlacement = (w: number, startY: number) => {
+    const width = Math.max(1, Math.min(w, activeCols));
+    let bestX = 0;
+    let bestY = Number.POSITIVE_INFINITY;
+
+    for (let x = 0; x <= activeCols - width; x += 1) {
+      let y = Math.max(0, startY);
+      for (let xi = x; xi < x + width; xi += 1) {
+        y = Math.max(y, columnHeights[xi] ?? 0);
+      }
+      if (y < bestY || (y === bestY && x < bestX)) {
+        bestX = x;
+        bestY = y;
       }
     }
-    return true;
-  };
-  const findPlacement = (w: number, h: number, startY: number) => {
-    for (let y = Math.max(0, startY); y < 500; y += 1) {
-      for (let x = 0; x <= activeCols - w; x += 1) {
-        if (canPlace(x, y, w, h)) return { x, y };
-      }
-    }
-    return { x: 0, y: Math.max(0, startY) };
+
+    return {
+      x: bestX,
+      y: Number.isFinite(bestY) ? bestY : Math.max(0, startY)
+    };
   };
 
   for (const item of regularItems) {
@@ -431,7 +475,17 @@ function expandLibraryViewItems(
         w: item.w,
         h: item.h
       };
-    occupy(position.x, position.y, position.w, position.h);
+    const clamped = clampGridItem(
+      {
+        i: item.i,
+        x: position.x,
+        y: position.y,
+        w: position.w,
+        h: position.h
+      },
+      activeCols
+    );
+    occupy(clamped.x, clamped.y, clamped.w, clamped.h);
   }
 
   const expandedItems = librarySources.flatMap((item) => {
@@ -486,11 +540,7 @@ function expandLibraryViewItems(
         (!embeddedLibraryAsset.sourceNodeId ||
           embeddedLibraryAsset.sourceNodeId === item.i)
       ) {
-        const placement = findPlacement(
-          detailWidth,
-          detailHeight,
-          basePosition.y
-        );
+        const placement = findPlacement(detailWidth, basePosition.y);
         occupy(placement.x, placement.y, detailWidth, detailHeight);
         return {
           i: `${item.i}::asset-detail::${asset.id}`,
@@ -512,7 +562,7 @@ function expandLibraryViewItems(
       const seed = hashLibrarySeed(`${item.i}:${asset.id}:${index}`);
       const w = widths[seed % widths.length] ?? 1;
       const h = heights[seed % heights.length] ?? basePosition.h;
-      const placement = findPlacement(w, h, basePosition.y);
+      const placement = findPlacement(w, basePosition.y);
       occupy(placement.x, placement.y, w, h);
       return {
         i: `${item.i}::asset::${asset.id}`,
@@ -673,9 +723,15 @@ function getLibraryTransitionLayoutId(item: RuntimeItem) {
       item.props && typeof item.props === 'object'
         ? (item.props as Record<string, unknown>).assetId
         : undefined;
-    return typeof assetId === 'string' && assetId
-      ? `library-asset-${assetId}`
-      : undefined;
+    const sourceNodeId =
+      item.props && typeof item.props === 'object'
+        ? (item.props as Record<string, unknown>).sourceNodeId
+        : undefined;
+    if (typeof assetId !== 'string' || !assetId) return undefined;
+    if (typeof sourceNodeId === 'string' && sourceNodeId) {
+      return `library-asset-${sourceNodeId}-${assetId}`;
+    }
+    return `library-asset-${assetId}`;
   }
 
   if (item.type === 'library-asset-item') {
@@ -685,10 +741,16 @@ function getLibraryTransitionLayoutId(item: RuntimeItem) {
             | Record<string, unknown>
             | undefined)
         : undefined;
+    const sourceNodeId =
+      item.props && typeof item.props === 'object'
+        ? (item.props as Record<string, unknown>).sourceNodeId
+        : undefined;
     const assetId = asset?.id;
-    return typeof assetId === 'string' && assetId
-      ? `library-asset-${assetId}`
-      : undefined;
+    if (typeof assetId !== 'string' || !assetId) return undefined;
+    if (typeof sourceNodeId === 'string' && sourceNodeId) {
+      return `library-asset-${sourceNodeId}-${assetId}`;
+    }
+    return `library-asset-${assetId}`;
   }
 
   return undefined;
@@ -805,14 +867,29 @@ function DynamicGridCanvas({
   const isAdminPreview = Boolean(adminPreview);
   const isLockedForUser = !isAdminPreview && !canUserEditLayout;
   const isLayoutEditing = isAdminPreview ? true : isEditing;
+  const [isBreakpointResolved, setIsBreakpointResolved] = useState(
+    Boolean(isAdminPreview)
+  );
+  useEffect(() => {
+    if (isAdminPreview) {
+      setIsBreakpointResolved(true);
+      return;
+    }
+    if (typeof window === 'undefined') return;
+    const next = getResponsiveBreakpointKeyFromWidth(window.innerWidth);
+    setCurrentBreakpoint((current) => (current === next ? current : next));
+    setIsBreakpointResolved(true);
+  }, [isAdminPreview]);
   useEffect(() => {
     if (adminPreview?.forcedBreakpoint) {
       setCurrentBreakpoint(adminPreview.forcedBreakpoint);
+      setIsBreakpointResolved(true);
     }
   }, [adminPreview?.forcedBreakpoint]);
   const activeStoredBreakpoint = isAdminPreview
     ? (adminPreview?.forcedBreakpoint ?? 'lg')
     : getStoredBreakpointKey(currentBreakpoint);
+  const activeGridCols = GRID_COLS[currentBreakpoint];
   const effectiveLayouts = useMemo(
     () =>
       adminPreview
@@ -936,7 +1013,7 @@ function DynamicGridCanvas({
     );
 
     return matches.map(({ key, config }, index) => {
-      const cols = GRID_COLS.lg;
+      const cols = activeGridCols;
       const rawW = Array.isArray(config.defaultLayout?.w)
         ? config.defaultLayout?.w[0]
         : config.defaultLayout?.w;
@@ -955,10 +1032,15 @@ function DynamicGridCanvas({
         props: { __searchResult: true, __searchQuery: q }
       };
     });
-  }, [search, items, componentEntries, isAdminPreview]);
+  }, [search, items, componentEntries, isAdminPreview, activeGridCols]);
 
   const gridItemsToRender = useMemo(() => {
     if (isAdminPreview) {
+      return [...filteredItems, ...searchNodeItems];
+    }
+
+    if (!isBreakpointResolved) {
+      // Prevent first-paint misplacement before responsive breakpoint is known.
       return [...filteredItems, ...searchNodeItems];
     }
 
@@ -982,7 +1064,8 @@ function DynamicGridCanvas({
             } satisfies GridLayoutItem
           ])
         ),
-        embeddedLibraryAsset
+        embeddedLibraryAsset,
+        activeGridCols
       ),
       ...searchNodeItems
     ];
@@ -994,9 +1077,11 @@ function DynamicGridCanvas({
     preset.slug,
     liveLibraryAssetsByProductId,
     activeStoredBreakpoint,
+    activeGridCols,
     effectiveLayouts,
     currentBreakpoint,
-    embeddedLibraryAsset
+    embeddedLibraryAsset,
+    isBreakpointResolved
   ]);
 
   const tenantBranding = useMemo(
@@ -1144,250 +1229,277 @@ function DynamicGridCanvas({
             }
           `}</style>
 
-        <LayoutGroup id={`grid-${preset.slug || 'root'}`}>
-          <ResponsiveGridLayout
-            className="layout"
-            breakpoint={
-              isAdminPreview ? adminPreview?.forcedBreakpoint : undefined
+        <ResponsiveGridLayout
+          className="layout"
+          breakpoint={
+            isAdminPreview ? adminPreview?.forcedBreakpoint : undefined
+          }
+          layouts={effectiveLayouts}
+          breakpoints={GRID_BREAKPOINTS}
+          cols={GRID_COLS}
+          isDraggable={isLayoutEditing}
+          isResizable={isLayoutEditing}
+          rowHeight={30}
+          margin={[16, 16]}
+          onBreakpointChange={(breakpoint) => {
+            const nextBreakpoint = breakpoint as keyof typeof GRID_BREAKPOINTS;
+            setCurrentBreakpoint((current) =>
+              current === nextBreakpoint ? current : nextBreakpoint
+            );
+            setIsBreakpointResolved(true);
+          }}
+          onLayoutChange={(_, allLayouts) => {
+            if (!isLayoutEditing && !adminPreview?.onLayoutChange) return;
+
+            const itemIds = new Set(filteredItems.map((entry) => entry.i));
+            const activeLayout = (allLayouts[currentBreakpoint] ??
+              allLayouts.lg ??
+              []) as Array<{
+              i: string;
+              x: number;
+              y: number;
+              w: number;
+              h: number;
+            }>;
+            if (adminPreview?.onLayoutChange) {
+              const nextLayout = filterStoredLayoutEntries(
+                (allLayouts[adminPreview.forcedBreakpoint] ?? []) as Array<{
+                  i: string;
+                  x: number;
+                  y: number;
+                  w: number;
+                  h: number;
+                }>,
+                itemIds
+              );
+              const currentLayout =
+                adminPreview.layoutOverrides[adminPreview.forcedBreakpoint] ??
+                [];
+              if (areGridLayoutItemsEqual(nextLayout, currentLayout)) return;
+              adminPreview.onLayoutChange(
+                adminPreview.forcedBreakpoint,
+                nextLayout
+              );
+              return;
             }
-            layouts={effectiveLayouts}
-            breakpoints={GRID_BREAKPOINTS}
-            cols={GRID_COLS}
-            isDraggable={isLayoutEditing}
-            isResizable={isLayoutEditing}
-            rowHeight={30}
-            margin={[16, 16]}
-            onBreakpointChange={(breakpoint) =>
-              setCurrentBreakpoint(breakpoint as keyof typeof GRID_BREAKPOINTS)
-            }
-            onLayoutChange={(_, allLayouts) => {
-              const itemIds = new Set(filteredItems.map((entry) => entry.i));
-              const activeLayout = (allLayouts[currentBreakpoint] ??
-                allLayouts.lg ??
-                []) as Array<{
-                i: string;
-                x: number;
-                y: number;
-                w: number;
-                h: number;
-              }>;
-              if (adminPreview?.onLayoutChange) {
-                const nextLayout = filterStoredLayoutEntries(
-                  (allLayouts[adminPreview.forcedBreakpoint] ?? []) as Array<{
-                    i: string;
-                    x: number;
-                    y: number;
-                    w: number;
-                    h: number;
-                  }>,
-                  itemIds
-                );
-                adminPreview.onLayoutChange(
-                  adminPreview.forcedBreakpoint,
-                  nextLayout
-                );
-                return;
+            setLayouts((current) => {
+              const sanitize = (
+                breakpoint: keyof typeof current
+              ): GridLayoutItem[] => {
+                const sourceLayout = (allLayouts[breakpoint] ?? []) as Array<{
+                  i: string;
+                  x: number;
+                  y: number;
+                  w: number;
+                  h: number;
+                }>;
+                return filterStoredLayoutEntries(sourceLayout, itemIds);
+              };
+
+              const nextLg = sanitize('lg');
+              const nextSm = sanitize('sm');
+              const nextXs = sanitize('xs');
+              if (
+                areGridLayoutItemsEqual(current.lg, nextLg) &&
+                areGridLayoutItemsEqual(current.sm, nextSm) &&
+                areGridLayoutItemsEqual(current.xs, nextXs)
+              ) {
+                return current;
               }
-              if (!isLayoutEditing) return;
-              setLayouts((current) => {
-                const sanitize = (
-                  breakpoint: keyof typeof current
-                ): GridLayoutItem[] => {
-                  const sourceLayout = (allLayouts[breakpoint] ?? []) as Array<{
-                    i: string;
-                    x: number;
-                    y: number;
-                    w: number;
-                    h: number;
-                  }>;
-                  return filterStoredLayoutEntries(sourceLayout, itemIds);
-                };
 
-                return {
-                  ...current,
-                  lg: sanitize('lg'),
-                  sm: sanitize('sm'),
-                  xs: sanitize('xs')
-                };
-              });
-              const byId = new Map(
-                activeLayout.map((entry) => [entry.i, entry])
-              );
-              setItems((prev) =>
-                prev.map((item) => {
-                  const next = byId.get(item.i);
-                  const basePosition = item.position ?? {
-                    lg: {
-                      i: item.i,
-                      x: item.x,
-                      y: item.y,
-                      w: item.w,
-                      h: item.h
-                    },
-                    sm: {
-                      i: item.i,
-                      x: item.x,
-                      y: item.y,
-                      w: item.w,
-                      h: item.h
-                    },
-                    xs: {
-                      i: item.i,
-                      x: item.x,
-                      y: item.y,
-                      w: item.w,
-                      h: item.h
-                    }
-                  };
-                  return next
-                    ? {
-                        ...item,
-                        x: next.x,
-                        y: next.y,
-                        w: next.w,
-                        h: next.h,
-                        position: {
-                          ...basePosition,
-                          [activeStoredBreakpoint]: {
-                            i: item.i,
-                            x: next.x,
-                            y: next.y,
-                            w: next.w,
-                            h: next.h
-                          }
-                        }
-                      }
-                    : item;
-                })
-              );
-            }}
-          >
-            {gridItemsToRender.map((item) => {
-              const NodeComponent = ComponentRegistry[item.type];
-              const isSearchNode = item.i.startsWith('search-node-');
-              const sourceNodeId =
-                item.props && typeof item.props === 'object'
-                  ? (item.props as Record<string, unknown>).sourceNodeId
-                  : undefined;
-              const selectableNodeId =
-                typeof sourceNodeId === 'string' ? sourceNodeId : item.i;
-              const nodeProductId =
-                item.props && typeof item.props === 'object'
-                  ? (item.props as Record<string, unknown>).productId
-                  : undefined;
-              const nodeProps =
-                isTextNodeType(item.type) &&
-                typeof nodeProductId !== 'string' &&
-                libraryProductIds[0]
-                  ? {
-                      ...item.props,
-                      fallbackProductId: libraryProductIds[0]
-                    }
-                  : item.props;
-              const layoutId = getLibraryTransitionLayoutId(item);
-
-              return (
-                <div
-                  key={item.i}
-                  data-grid={{
+              return {
+                ...current,
+                lg: nextLg,
+                sm: nextSm,
+                xs: nextXs
+              };
+            });
+            const byId = new Map(activeLayout.map((entry) => [entry.i, entry]));
+            setItems((prev) => {
+              let changed = false;
+              const nextItems = prev.map((item) => {
+                const next = byId.get(item.i);
+                const basePosition = item.position ?? {
+                  lg: {
+                    i: item.i,
                     x: item.x,
                     y: item.y,
                     w: item.w,
-                    h: item.h,
-                    minW: 1,
-                    minH: 2,
-                    static:
-                      isSearchNode ||
-                      item.type === 'library-asset-item' ||
-                      item.type === 'library-asset-detail' ||
-                      !isLayoutEditing
-                  }}
-                  onMouseDownCapture={() =>
-                    adminPreview?.onSelectNode?.(selectableNodeId)
+                    h: item.h
+                  },
+                  sm: {
+                    i: item.i,
+                    x: item.x,
+                    y: item.y,
+                    w: item.w,
+                    h: item.h
+                  },
+                  xs: {
+                    i: item.i,
+                    x: item.x,
+                    y: item.y,
+                    w: item.w,
+                    h: item.h
                   }
-                  className={`overflow-hidden animate-fade-in-up ${
-                    isSearchNode
-                      ? 'rounded-xl ring-1 ring-cyan-400/30'
-                      : isLayoutEditing
-                        ? 'rounded-xl ring-1 ring-amber-500/20'
-                        : ''
-                  } ${
-                    adminPreview?.selectedNodeId === selectableNodeId
-                      ? 'ring-2 ring-sky-400/50'
+                };
+                if (!next) return item;
+
+                const currentPosition = basePosition[activeStoredBreakpoint];
+                const isSamePosition =
+                  item.x === next.x &&
+                  item.y === next.y &&
+                  item.w === next.w &&
+                  item.h === next.h &&
+                  currentPosition?.x === next.x &&
+                  currentPosition?.y === next.y &&
+                  currentPosition?.w === next.w &&
+                  currentPosition?.h === next.h;
+
+                if (isSamePosition) return item;
+                changed = true;
+
+                return {
+                  ...item,
+                  x: next.x,
+                  y: next.y,
+                  w: next.w,
+                  h: next.h,
+                  position: {
+                    ...basePosition,
+                    [activeStoredBreakpoint]: {
+                      i: item.i,
+                      x: next.x,
+                      y: next.y,
+                      w: next.w,
+                      h: next.h
+                    }
+                  }
+                };
+              });
+
+              return changed ? nextItems : prev;
+            });
+          }}
+        >
+          {gridItemsToRender.map((item) => {
+            const NodeComponent = ComponentRegistry[item.type];
+            const isSearchNode = item.i.startsWith('search-node-');
+            const sourceNodeId =
+              item.props && typeof item.props === 'object'
+                ? (item.props as Record<string, unknown>).sourceNodeId
+                : undefined;
+            const selectableNodeId =
+              typeof sourceNodeId === 'string' ? sourceNodeId : item.i;
+            const nodeProductId =
+              item.props && typeof item.props === 'object'
+                ? (item.props as Record<string, unknown>).productId
+                : undefined;
+            const nodeProps =
+              isTextNodeType(item.type) &&
+              typeof nodeProductId !== 'string' &&
+              libraryProductIds[0]
+                ? {
+                    ...item.props,
+                    fallbackProductId: libraryProductIds[0]
+                  }
+                : item.props;
+            const layoutId = getLibraryTransitionLayoutId(item);
+
+            return (
+              <div
+                key={item.i}
+                data-grid={{
+                  x: item.x,
+                  y: item.y,
+                  w: item.w,
+                  h: item.h,
+                  minW: 1,
+                  minH: 2,
+                  static:
+                    isSearchNode ||
+                    item.type === 'library-asset-item' ||
+                    item.type === 'library-asset-detail' ||
+                    !isLayoutEditing
+                }}
+                onMouseDownCapture={() =>
+                  adminPreview?.onSelectNode?.(selectableNodeId)
+                }
+                className={`overflow-hidden animate-fade-in-up ${
+                  isSearchNode
+                    ? 'rounded-xl ring-1 ring-cyan-400/30'
+                    : isLayoutEditing
+                      ? 'rounded-xl ring-1 ring-amber-500/20'
                       : ''
-                  }`}
-                  style={{
-                    borderRadius: 'var(--tenant-node-radius)'
-                  }}
+                } ${
+                  adminPreview?.selectedNodeId === selectableNodeId
+                    ? 'ring-2 ring-sky-400/50'
+                    : ''
+                }`}
+                style={{
+                  borderRadius: 'var(--tenant-node-radius)'
+                }}
+              >
+                <motion.div
+                  layout={false}
+                  layoutId={layoutId}
+                  className="relative h-full w-full"
                 >
-                  <motion.div
-                    layout
-                    layoutId={layoutId}
-                    transition={{
-                      type: 'spring',
-                      stiffness: 420,
-                      damping: 30
-                    }}
-                    className="relative h-full w-full"
-                  >
-                    {isAdminPreview &&
-                    item.type !== 'library-asset-item' &&
-                    item.type !== 'library-asset-detail' ? (
-                      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-b from-black/90 via-black/70 to-transparent px-3 py-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-white">
-                            {item.type
-                              .replace(/^node-/, '')
-                              .replace(/[-_]/g, ' ')}
-                          </p>
-                          <p className="truncate text-[10px] text-zinc-400">
-                            {activeStoredBreakpoint.toUpperCase()}
-                          </p>
-                        </div>
+                  {isAdminPreview &&
+                  item.type !== 'library-asset-item' &&
+                  item.type !== 'library-asset-detail' ? (
+                    <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 bg-gradient-to-b from-black/90 via-black/70 to-transparent px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold text-white">
+                          {item.type
+                            .replace(/^node-/, '')
+                            .replace(/[-_]/g, ' ')}
+                        </p>
+                        <p className="truncate text-[10px] text-zinc-400">
+                          {activeStoredBreakpoint.toUpperCase()}
+                        </p>
                       </div>
-                    ) : null}
-                    <div
-                      className={
-                        isAdminPreview ? 'pointer-events-none h-full' : 'h-full'
-                      }
-                    >
-                      {item.type === 'library-asset-detail' ? (
-                        <LibraryAssetDetailPanel
-                          assetId={String(
-                            (item.props as Record<string, unknown>)?.assetId ??
-                              ''
-                          )}
-                          backHref={String(
-                            (item.props as Record<string, unknown>)?.backHref ??
-                              '/'
-                          )}
-                          pageName={String(
-                            (item.props as Record<string, unknown>)?.pageName ??
-                              'Gallery'
-                          )}
-                          embedded
-                          inGrid
-                          initialAsset={
-                            (item.props as Record<string, unknown>)
-                              ?.initialAsset as
-                              | Record<string, unknown>
-                              | undefined as any
-                          }
-                        />
-                      ) : (
-                        <NodeComponent
-                          id={item.i}
-                          type={item.type}
-                          props={nodeProps}
-                        />
-                      )}
                     </div>
-                  </motion.div>
-                </div>
-              );
-            })}
-          </ResponsiveGridLayout>
-        </LayoutGroup>
+                  ) : null}
+                  <div
+                    className={
+                      isAdminPreview ? 'pointer-events-none h-full' : 'h-full'
+                    }
+                  >
+                    {item.type === 'library-asset-detail' ? (
+                      <LibraryAssetDetailPanel
+                        assetId={String(
+                          (item.props as Record<string, unknown>)?.assetId ?? ''
+                        )}
+                        backHref={String(
+                          (item.props as Record<string, unknown>)?.backHref ??
+                            '/'
+                        )}
+                        pageName={String(
+                          (item.props as Record<string, unknown>)?.pageName ??
+                            'Gallery'
+                        )}
+                        embedded
+                        inGrid
+                        initialAsset={
+                          (item.props as Record<string, unknown>)
+                            ?.initialAsset as
+                            | Record<string, unknown>
+                            | undefined as any
+                        }
+                      />
+                    ) : (
+                      <NodeComponent
+                        id={item.i}
+                        type={item.type}
+                        props={nodeProps}
+                      />
+                    )}
+                  </div>
+                </motion.div>
+              </div>
+            );
+          })}
+        </ResponsiveGridLayout>
       </main>
     </TenantAppChrome>
   );

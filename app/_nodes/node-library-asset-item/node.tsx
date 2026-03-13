@@ -125,28 +125,31 @@ function LibraryAssetModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999]" style={portalThemeStyle}>
+    <div
+      className="fixed flex items-center justify-center inset-0 z-[9999]"
+      style={portalThemeStyle}
+    >
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-md"
         onClick={onClose}
       />
-      <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6">
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full border bg-black/35 backdrop-blur-sm"
+        style={{
+          borderColor: 'var(--tenant-border)',
+          color: 'var(--tenant-text-main)'
+        }}
+        aria-label="Close library item preview"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      <div className="absolute  flex items-center justify-center p-4 sm:p-6">
         <div
-          className="relative max-h-[92vh] w-full max-w-[900px] rounded-[var(--tenant-node-radius)]"
+          className="relative  h-full w-full max-w-[900px] rounded-[var(--tenant-node-radius)]"
           onClick={(event) => event.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={onClose}
-            className="absolute right-4 top-4 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full border bg-black/35 backdrop-blur-sm"
-            style={{
-              borderColor: 'var(--tenant-border)',
-              color: 'var(--tenant-text-main)'
-            }}
-            aria-label="Close library item preview"
-          >
-            <X className="h-5 w-5" />
-          </button>
           <LibraryAssetDetailPanel
             assetId={assetId}
             backHref=""

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 import { Button } from '~/components/ui/button';
+import { VideoPlayer } from '~/components/ui/video-player';
 import { api } from '~/trpc/react';
 
 type LibraryAssetDetailPanelProps = {
@@ -43,7 +44,21 @@ type AssetMetadata = {
   tags?: string[];
 };
 
-type InitialAssetData = {
+type TouchPoint = {
+  x: number;
+  y: number;
+};
+
+type PinchSession = {
+  startDistance: number;
+  startScale: number;
+  startPanX: number;
+  startPanY: number;
+  startCenterOffsetX: number;
+  startCenterOffsetY: number;
+};
+
+export type InitialAssetData = {
   id: string;
   productId: string;
   title: string;
@@ -93,6 +108,12 @@ function readLibraryTags(asset: Pick<InitialAssetData, 'tags' | 'metadata'>) {
 
 function normalizeSlug(slug: string) {
   return slug.replace(/^\/+|\/+$/g, '');
+}
+
+function readOptionalUrl(value: string | null | undefined) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 function PinActionButton({
@@ -151,6 +172,9 @@ export function LibraryAssetDetailPanel({
     x: number;
     y: number;
   } | null>(null);
+  const touchPointsRef = useRef<Map<number, TouchPoint>>(new Map());
+  const pinchSessionRef = useRef<PinchSession | null>(null);
+  const pinchGestureActiveRef = useRef(false);
   const [visitorToken, setVisitorToken] = useState<string | undefined>(() => {
     if (typeof window === 'undefined') return undefined;
     const stored = window.localStorage.getItem(LIBRARY_VISITOR_TOKEN_KEY);
@@ -221,6 +245,9 @@ export function LibraryAssetDetailPanel({
     if (!isExpanded) {
       activePointerIdRef.current = null;
       dragSessionRef.current = null;
+      touchPointsRef.current.clear();
+      pinchSessionRef.current = null;
+      pinchGestureActiveRef.current = false;
     }
   }, [isExpanded]);
 
@@ -238,6 +265,9 @@ export function LibraryAssetDetailPanel({
       lastTouchTapRef.current = null;
       activePointerIdRef.current = null;
       dragSessionRef.current = null;
+      touchPointsRef.current.clear();
+      pinchSessionRef.current = null;
+      pinchGestureActiveRef.current = false;
       setPanOffset({ x: 0, y: 0 });
       setZoomStep(0);
     };
@@ -330,7 +360,7 @@ export function LibraryAssetDetailPanel({
   const showViews = metadata.showViews ?? true;
   const showDownloads = metadata.showDownloads ?? true;
   const showLikes = metadata.showLikes ?? true;
-  const canDownload = Boolean(asset.isDownloadable);
+  const assetUrl = readOptionalUrl(asset.url);
   const assetMedia = asset as typeof asset & {
     previewUrl?: string | null;
     thumbnailUrl?: string | null;
@@ -340,13 +370,15 @@ export function LibraryAssetDetailPanel({
     openInNewTab?: boolean | null;
   };
   const previewUrl =
-    assetMedia.previewUrl ??
-    assetMedia.thumbnailUrl ??
-    (asset.type === 'IMAGE' || asset.type === 'LINK' ? asset.url : null);
+    readOptionalUrl(assetMedia.previewUrl) ??
+    readOptionalUrl(assetMedia.thumbnailUrl) ??
+    (asset.type === 'IMAGE' || asset.type === 'LINK' ? assetUrl : null);
   const resolvedTargetUrl =
-    assetLink.targetUrl ?? (asset.type === 'LINK' ? asset.url : null);
+    readOptionalUrl(assetLink.targetUrl) ??
+    (asset.type === 'LINK' ? assetUrl : null);
   const opensInNewTab = assetLink.openInNewTab ?? true;
   const canOpenLink = asset.type === 'LINK' && Boolean(resolvedTargetUrl);
+  const canDownload = Boolean(asset.isDownloadable && assetUrl);
   const itemTags = readLibraryTags(asset);
   const stats = [
     showLikes ? `${asset.stats?.likes ?? 0} likes` : null,
@@ -356,6 +388,34 @@ export function LibraryAssetDetailPanel({
 
   const isZoomed = zoomStep > 0;
   const zoomScale = ZOOM_LEVELS[zoomStep] ?? 1;
+  const maxZoomScale = ZOOM_LEVELS[ZOOM_LEVELS.length - 1] ?? 1;
+
+  const findClosestZoomStep = (scale: number) => {
+    let closestStep = 0;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < ZOOM_LEVELS.length; index += 1) {
+      const level = ZOOM_LEVELS[index] ?? 1;
+      const distance = Math.abs(level - scale);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestStep = index;
+      }
+    }
+
+    return closestStep;
+  };
+
+  const readActiveTouchPair = ():
+    | [[number, TouchPoint], [number, TouchPoint]]
+    | null => {
+    const activeTouches = Array.from(touchPointsRef.current.entries());
+    if (activeTouches.length < 2) {
+      return null;
+    }
+
+    return [activeTouches[0], activeTouches[1]];
+  };
 
   const getPanBounds = (scale: number) => {
     const container = zoomViewportRef.current;
@@ -391,6 +451,9 @@ export function LibraryAssetDetailPanel({
     lastTouchTapRef.current = null;
     activePointerIdRef.current = null;
     dragSessionRef.current = null;
+    touchPointsRef.current.clear();
+    pinchSessionRef.current = null;
+    pinchGestureActiveRef.current = false;
     setPanOffset({ x: 0, y: 0 });
     setZoomStep(0);
   };
@@ -523,6 +586,100 @@ export function LibraryAssetDetailPanel({
     }
   };
 
+  const startPinchGesture = () => {
+    const touchPair = readActiveTouchPair();
+    const bounds = zoomViewportRef.current?.getBoundingClientRect();
+    if (!touchPair || !bounds) {
+      return;
+    }
+
+    const [, firstTouch] = touchPair[0];
+    const [, secondTouch] = touchPair[1];
+    const distance = Math.hypot(
+      secondTouch.x - firstTouch.x,
+      secondTouch.y - firstTouch.y
+    );
+    if (!distance) {
+      return;
+    }
+
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+    }
+
+    pinchGestureActiveRef.current = true;
+    lastTouchTapRef.current = null;
+    activePointerIdRef.current = null;
+    dragSessionRef.current = null;
+
+    const centerX = (firstTouch.x + secondTouch.x) / 2;
+    const centerY = (firstTouch.y + secondTouch.y) / 2;
+    pinchSessionRef.current = {
+      startDistance: distance,
+      startScale: zoomScale,
+      startPanX: panOffset.x,
+      startPanY: panOffset.y,
+      startCenterOffsetX: centerX - (bounds.left + bounds.width / 2),
+      startCenterOffsetY: centerY - (bounds.top + bounds.height / 2)
+    };
+  };
+
+  const updatePinchGesture = () => {
+    const touchPair = readActiveTouchPair();
+    const bounds = zoomViewportRef.current?.getBoundingClientRect();
+    if (!touchPair || !bounds) {
+      return;
+    }
+
+    if (!pinchSessionRef.current) {
+      startPinchGesture();
+    }
+
+    const pinchSession = pinchSessionRef.current;
+    if (!pinchSession) {
+      return;
+    }
+
+    const [, firstTouch] = touchPair[0];
+    const [, secondTouch] = touchPair[1];
+    const distance = Math.hypot(
+      secondTouch.x - firstTouch.x,
+      secondTouch.y - firstTouch.y
+    );
+    if (!distance) {
+      return;
+    }
+
+    const centerX = (firstTouch.x + secondTouch.x) / 2;
+    const centerY = (firstTouch.y + secondTouch.y) / 2;
+    const centerOffsetX = centerX - (bounds.left + bounds.width / 2);
+    const centerOffsetY = centerY - (bounds.top + bounds.height / 2);
+
+    const rawScale = Math.min(
+      maxZoomScale,
+      Math.max(
+        1,
+        (pinchSession.startScale * distance) / pinchSession.startDistance
+      )
+    );
+    const nextStep = findClosestZoomStep(rawScale);
+    const snappedScale = ZOOM_LEVELS[nextStep] ?? 1;
+    const scaleRatio = snappedScale / pinchSession.startScale;
+    const nextPan = clampPan(
+      centerOffsetX -
+        pinchSession.startCenterOffsetX * scaleRatio +
+        pinchSession.startPanX * scaleRatio,
+      centerOffsetY -
+        pinchSession.startCenterOffsetY * scaleRatio +
+        pinchSession.startPanY * scaleRatio,
+      snappedScale
+    );
+
+    setZoomStep(nextStep);
+    setPanOffset(nextPan);
+  };
+
   const finishPointer = (
     target: HTMLButtonElement,
     pointerId: number,
@@ -530,9 +687,44 @@ export function LibraryAssetDetailPanel({
     clientY: number
   ) => {
     const session = dragSessionRef.current;
+    const isTouchPointer = touchPointsRef.current.has(pointerId);
+    if (isTouchPointer) {
+      touchPointsRef.current.delete(pointerId);
+    }
+
     if (activePointerIdRef.current === pointerId) {
       activePointerIdRef.current = null;
       releasePointerCapture(target, pointerId);
+    }
+
+    if (isTouchPointer) {
+      const remainingTouches = Array.from(touchPointsRef.current.entries());
+      if (remainingTouches.length < 2) {
+        pinchSessionRef.current = null;
+      }
+
+      if (pinchGestureActiveRef.current) {
+        if (remainingTouches.length === 1 && isZoomed) {
+          const [remainingPointerId, remainingTouch] = remainingTouches[0];
+          activePointerIdRef.current = remainingPointerId;
+          dragSessionRef.current = {
+            pointerId: remainingPointerId,
+            pointerType: 'touch',
+            startX: remainingTouch.x,
+            startY: remainingTouch.y,
+            startPanX: panOffset.x,
+            startPanY: panOffset.y,
+            moved: true
+          };
+        } else {
+          dragSessionRef.current = null;
+        }
+
+        if (remainingTouches.length === 0) {
+          pinchGestureActiveRef.current = false;
+        }
+        return;
+      }
     }
 
     dragSessionRef.current = null;
@@ -552,8 +744,21 @@ export function LibraryAssetDetailPanel({
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    activePointerIdRef.current = event.pointerId;
     lastPointerTypeRef.current = event.pointerType;
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    if (event.pointerType === 'touch') {
+      touchPointsRef.current.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY
+      });
+      if (touchPointsRef.current.size >= 2) {
+        startPinchGesture();
+        return;
+      }
+    }
+
+    activePointerIdRef.current = event.pointerId;
     dragSessionRef.current = {
       pointerId: event.pointerId,
       pointerType: event.pointerType,
@@ -563,10 +768,23 @@ export function LibraryAssetDetailPanel({
       startPanY: panOffset.y,
       moved: false
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (
+      event.pointerType === 'touch' &&
+      touchPointsRef.current.has(event.pointerId)
+    ) {
+      touchPointsRef.current.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY
+      });
+      if (touchPointsRef.current.size >= 2) {
+        updatePinchGesture();
+        return;
+      }
+    }
+
     const session = dragSessionRef.current;
     if (
       !session ||
@@ -602,11 +820,22 @@ export function LibraryAssetDetailPanel({
   };
 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (touchPointsRef.current.has(event.pointerId)) {
+      touchPointsRef.current.delete(event.pointerId);
+      if (touchPointsRef.current.size < 2) {
+        pinchSessionRef.current = null;
+      }
+      if (touchPointsRef.current.size === 0) {
+        pinchGestureActiveRef.current = false;
+      }
+    }
+
     if (activePointerIdRef.current === event.pointerId) {
       activePointerIdRef.current = null;
-      releasePointerCapture(event.currentTarget, event.pointerId);
       dragSessionRef.current = null;
     }
+
+    releasePointerCapture(event.currentTarget, event.pointerId);
   };
 
   const handleMouseMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -633,7 +862,7 @@ export function LibraryAssetDetailPanel({
 
   if (inGrid) {
     return (
-      <section className="flex h-full flex-col rounded-[var(--tenant-node-radius)]  bg-[var(--tenant-card-bg)] p-4 text-black">
+      <section className="flex h-full flex-col rounded-[var(--tenant-node-radius)]   bg-[var(--tenant-card-bg)] p-4 text-black">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-start gap-3">
             <div className="flex shrink-0 items-center gap-2">
@@ -674,9 +903,9 @@ export function LibraryAssetDetailPanel({
                   </span>
                 </PinActionButton>
               ) : null}
-              {canDownload && (
+              {canDownload && assetUrl ? (
                 <a
-                  href={asset.url}
+                  href={assetUrl}
                   download
                   className="inline-flex h-11 items-center gap-2 rounded-full px-4 text-[var(--tenant-text-main)] transition hover:text-[var(--tenant-text-secondary)]"
                   onClick={(event) => {
@@ -693,7 +922,7 @@ export function LibraryAssetDetailPanel({
                     {showDownloads ? (asset.stats?.downloads ?? 0) : 'Download'}
                   </span>
                 </a>
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -732,29 +961,32 @@ export function LibraryAssetDetailPanel({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--tenant-node-radius)] bg-white shadow-[0_18px_40px_rgba(15,23,42,0.10)]">
-          <div className="relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[var(--tenant-node-radius)] bg-[#efebe4] p-4">
-            {asset.type === 'VIDEO' ? (
-              <video
-                src={asset.url}
-                controls
+          <div className="relative flex  w-full min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[var(--tenant-node-radius)] bg-[color-mix(in_srgb,var(--tenant-border)_12%,transparent)] p-4 ">
+            {asset.type === 'VIDEO' && assetUrl ? (
+              <VideoPlayer
+                src={assetUrl}
+                autoPlay={true}
+                // muted={true}
+                loop={true}
                 poster={previewUrl ?? undefined}
-                className="h-full max-h-full w-full rounded-[var(--tenant-node-radius)] overflow-hidden object-contain max-md:object-cover"
-                style={{ backgroundColor: '#efebe4' }}
+                title={asset.title}
+                className="h-full w-fit rounded-[var(--tenant-node-radius)] "
+                videoClassName="h-full w-full object-contain "
               />
-            ) : asset.type === 'IMAGE' ? (
+            ) : asset.type === 'IMAGE' && assetUrl ? (
               <Image
-                src={asset.url}
+                src={assetUrl}
                 alt={asset.title}
                 width={1600}
                 height={1600}
                 unoptimized
-                className="h-full w-auto max-w-full rounded-[20px] object-contain max-[1500px]:object-cover"
+                className="h-full w-auto max-w-full rounded-[20px] object-cover max-[1500px]:object-cover"
               />
-            ) : asset.type === 'PDF' ? (
+            ) : asset.type === 'PDF' && assetUrl ? (
               <iframe
-                src={asset.url}
+                src={assetUrl}
                 title={asset.title}
-                className="h-full w-full rounded-[20px] bg-white"
+                className="h-full w-full min-h-[420px] min-w-[600px] rounded-[20px] bg-white"
               />
             ) : previewUrl ? (
               <div
@@ -772,7 +1004,7 @@ export function LibraryAssetDetailPanel({
             )}
 
             <div className="absolute bottom-4 right-4 flex flex-col gap-2">
-              {asset.type === 'IMAGE' ? (
+              {asset.type === 'IMAGE' && assetUrl ? (
                 <button
                   type="button"
                   onClick={() => setIsExpanded(true)}
@@ -849,7 +1081,7 @@ export function LibraryAssetDetailPanel({
           </div>
         </div>
 
-        {typeof document !== 'undefined' && asset.type === 'IMAGE'
+        {typeof document !== 'undefined' && asset.type === 'IMAGE' && assetUrl
           ? createPortal(
               <AnimatePresence>
                 {isExpanded ? (
@@ -879,7 +1111,7 @@ export function LibraryAssetDetailPanel({
                       </button>
                       <span className="hidden sm:inline">
                         {isZoomed
-                          ? 'Desktop follows the cursor. On mobile, drag and double tap to fit.'
+                          ? 'Desktop follows the cursor. On mobile, pinch or drag and double tap to fit.'
                           : 'Click image to zoom in'}
                       </span>
                     </div>
@@ -943,9 +1175,9 @@ export function LibraryAssetDetailPanel({
                             stiffness: 220,
                             damping: 24
                           }}
-                          className="group relative flex h-[88vh] w-[min(92vw,1440px)] items-center justify-center overflow-hidden rounded-[28px] border border-white/10 bg-[#050505] shadow-[0_40px_120px_rgba(0,0,0,0.75)]"
+                          className="group relative flex h-fit w-fit items-center justify-center   border border-white/10 bg-[#050505] shadow-[0_40px_120px_rgba(0,0,0,0.75)]"
                           style={{
-                            touchAction: isZoomed ? 'none' : 'auto'
+                            touchAction: 'none'
                           }}
                         >
                           <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.04),transparent_20%,transparent_80%,rgba(255,255,255,0.03))]" />
@@ -963,12 +1195,12 @@ export function LibraryAssetDetailPanel({
                             className="flex h-full w-full items-center justify-center bg-[#050505]"
                           >
                             <Image
-                              src={asset.url}
+                              src={assetUrl}
                               alt={asset.title}
                               width={2400}
                               height={2400}
                               unoptimized
-                              className="h-auto max-h-[86dvh] w-auto max-w-[92vw] object-contain sm:max-h-[82vh] sm:max-w-[88vw]"
+                              className="h-auto max-h-[86dvh] w-auto max-w-[92vw] object-contain max-md:max-h-[100vh]"
                             />
                           </motion.div>
                         </motion.button>
@@ -1063,19 +1295,19 @@ export function LibraryAssetDetailPanel({
               }`}
               style={{ backgroundColor: '#000000' }}
             >
-              {asset.type === 'VIDEO' ? (
-                <video
-                  src={asset.url}
-                  controls
+              {asset.type === 'VIDEO' && assetUrl ? (
+                <VideoPlayer
+                  src={assetUrl}
                   poster={previewUrl ?? undefined}
-                  className={`w-full object-contain ${
+                  title={asset.title}
+                  className={`w-full ${
                     inGrid ? 'h-full max-h-full' : 'max-h-[72vh]'
                   }`}
-                  style={{ backgroundColor: '#000000' }}
+                  videoClassName="w-full object-contain"
                 />
-              ) : asset.type === 'IMAGE' ? (
+              ) : asset.type === 'IMAGE' && assetUrl ? (
                 <Image
-                  src={asset.url}
+                  src={assetUrl}
                   alt={asset.title}
                   width={1600}
                   height={1600}
@@ -1084,9 +1316,9 @@ export function LibraryAssetDetailPanel({
                     inGrid ? 'h-full max-h-full w-auto' : 'max-h-[72vh]'
                   }`}
                 />
-              ) : asset.type === 'PDF' ? (
+              ) : asset.type === 'PDF' && assetUrl ? (
                 <iframe
-                  src={asset.url}
+                  src={assetUrl}
                   title={asset.title}
                   className={`w-full bg-white ${
                     inGrid ? 'h-full min-h-0' : 'h-[72vh] min-h-[520px]'
@@ -1243,9 +1475,9 @@ export function LibraryAssetDetailPanel({
                   </Button>
                 ) : null}
 
-                {canDownload ? (
+                {canDownload && assetUrl ? (
                   <a
-                    href={asset.url}
+                    href={assetUrl}
                     download
                     className="inline-flex h-11 items-center justify-center border px-4 text-sm font-semibold transition"
                     style={{

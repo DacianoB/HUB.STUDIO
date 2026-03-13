@@ -1,0 +1,58 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - navigation [ref=e4]:
+        - button "H" [ref=e5] [cursor=pointer]:
+          - generic [ref=e6]: H
+        - button "Explorar" [ref=e7] [cursor=pointer]:
+          - img [ref=e8]
+        - button "Notificacoes" [ref=e11] [cursor=pointer]:
+          - img [ref=e12]
+        - button "Mensagens" [ref=e15] [cursor=pointer]:
+          - img [ref=e16]
+        - button "Configuracoes" [ref=e20] [cursor=pointer]:
+          - img [ref=e21]
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - img [ref=e27]
+            - textbox "Buscar nodes..." [ref=e30]
+          - button "Entrar" [ref=e32] [cursor=pointer]:
+            - img [ref=e33]
+            - text: Entrar
+        - generic [ref=e36]:
+          - button "Inicio" [ref=e37] [cursor=pointer]
+          - button "Dashboard" [disabled] [ref=e38]
+          - button "Ferramentas" [ref=e39] [cursor=pointer]
+          - button "Site" [ref=e40] [cursor=pointer]
+          - button "Aprendizado" [ref=e41] [cursor=pointer]
+        - main [ref=e42]:
+          - generic [ref=e43]:
+            - generic [ref=e98]:
+              - heading "Header Nav" [level=3] [ref=e100]
+              - generic [ref=e101]:
+                - paragraph [ref=e102]: "node id: home-header-nav"
+                - paragraph [ref=e103]: No props configured.
+            - generic [ref=e104]:
+              - heading "Hero Header" [level=3] [ref=e106]
+              - generic [ref=e107]:
+                - paragraph [ref=e108]: "node id: home-hero-header"
+                - generic [ref=e109]: "{ \"fixed\": true, \"data\": { \"NOME\": \"HUB.STUDIO\", \"SUBTITULO\": \"Visual runtime rebuild\", \"SIGLA\": \"HS\" } }"
+            - generic [ref=e110]:
+              - heading "Signin" [level=3] [ref=e112]
+              - generic [ref=e113]:
+                - paragraph [ref=e114]: "node id: home-signin"
+                - paragraph [ref=e115]: No props configured.
+            - generic [ref=e116]:
+              - heading "Quick Course Card" [level=3] [ref=e118]
+              - generic [ref=e119]:
+                - paragraph [ref=e120]: "node id: home-quick-course"
+                - paragraph [ref=e121]: No props configured.
+            - generic [ref=e122]:
+              - heading "Footer" [level=3] [ref=e124]
+              - generic [ref=e125]:
+                - paragraph [ref=e126]: "node id: home-footer"
+                - paragraph [ref=e127]: No props configured.
+  - button "Open Next.js Dev Tools" [ref=e94] [cursor=pointer]:
+    - img [ref=e95]
+  - alert [ref=e128]

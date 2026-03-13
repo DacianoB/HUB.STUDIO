@@ -25,12 +25,12 @@ import { createPortal } from 'react-dom';
 import { LibraryAssetDetailPanel } from '~/app/library/library-asset-detail';
 import HoverPlayCard from '~/components/ui/hover-play-card';
 import { Button } from '~/components/ui/button';
+import { VideoPlayer } from '~/components/ui/video-player';
 import {
   readStepQuestionnaireAttempt,
   type StepQuestionnaire
 } from '~/lib/step-questionnaire';
 import { api } from '~/trpc/react';
-import { Play } from 'next/font/google';
 
 type DashboardNodeStepViewerProps = {
   props?: Record<string, unknown>;
@@ -261,15 +261,30 @@ function StepAssetModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999]" style={portalThemeStyle}>
+    <div
+      className="fixed flex items-center justify-center inset-0 z-[9999]"
+      style={portalThemeStyle}
+    >
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-md"
         onClick={onClose}
       />
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 z-10 inline-flex h-10 w-10 items-center justify-center rounded-full border bg-black/35 backdrop-blur-sm"
+        style={{
+          borderColor: 'var(--tenant-border)',
+          color: 'var(--tenant-text-main)'
+        }}
+        aria-label="Close library item preview"
+      >
+        <X className="h-5 w-5" />
+      </button>
       {asset.sourceLibraryAssetId ? (
-        <div className="absolute inset-0 flex items-center justify-center p-4 sm:p-6 ">
+        <div className="absolute  flex items-center justify-center p-4 sm:p-6 ">
           <div
-            className="relative max-h-[92vh] w-full max-w-[900px] rounded-[var(--tenant-node-radius)] "
+            className="relative  w-full max-w-[900px] rounded-[var(--tenant-node-radius)] "
             onClick={(event) => event.stopPropagation()}
           >
             <LibraryAssetDetailPanel
@@ -327,11 +342,12 @@ function StepAssetModal({
                 }}
               >
                 {asset.type === 'VIDEO' ? (
-                  <video
+                  <VideoPlayer
                     src={asset.url}
                     poster={assetPreviewUrl(asset) ?? undefined}
-                    controls
-                    className="max-h-full w-full rounded-[20px] object-contain"
+                    title={asset.title}
+                    className="max-h-full w-full rounded-[20px]"
+                    videoClassName="max-h-full w-full object-contain"
                   />
                 ) : asset.type === 'IMAGE' ? (
                   <Image
@@ -346,7 +362,7 @@ function StepAssetModal({
                   <iframe
                     src={asset.url}
                     title={asset.title}
-                    className="h-[70vh] w-full rounded-[20px] bg-white"
+                    className="h-[70vh] min-w-[600px] w-full rounded-[20px] bg-white"
                   />
                 ) : (
                   <div

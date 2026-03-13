@@ -1,0 +1,27 @@
+- generic [ref=e1]:
+  - main [ref=e2]:
+    - generic [active] [ref=e3]:
+      - generic "Video player smoke test" [ref=e5]
+      - generic [ref=e17]:
+        - generic [ref=e18]:
+          - generic [ref=e19]: 0:01
+          - slider "Seek video" [ref=e23] [cursor=pointer]: "1.9"
+          - generic [ref=e24]: 9:56
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - button "Pause video" [ref=e27] [cursor=pointer]:
+              - img [ref=e28]
+            - generic [ref=e31]:
+              - button "Mute video" [ref=e32] [cursor=pointer]:
+                - img [ref=e33]
+              - generic:
+                - generic:
+                  - slider "Video volume": "0.9"
+          - generic [ref=e37]:
+            - button "Playback settings" [ref=e39] [cursor=pointer]:
+              - img [ref=e40]
+            - button "Enter fullscreen" [ref=e43] [cursor=pointer]:
+              - img [ref=e44]
+  - button "Open Next.js Dev Tools" [ref=e11] [cursor=pointer]:
+    - img [ref=e12]
+  - alert [ref=e15]

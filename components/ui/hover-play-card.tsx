@@ -23,6 +23,7 @@ type HoverPlayCardProps = {
   mutedOnHover?: boolean;
   onOpen?: () => void;
   overlayInteractive?: boolean;
+  parentIsHovering?: boolean;
   keepPlayIconWhilePlaying?: boolean;
   showCenterControl?: boolean;
 };
@@ -36,15 +37,17 @@ export default function HoverPlayCard({
   mutedOnHover = true,
   onOpen,
   overlayInteractive = true,
+  parentIsHovering = false,
   keepPlayIconWhilePlaying = false,
   showCenterControl = true
 }: HoverPlayCardProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [isHovering, setIsHovering] = useState(false);
+  const [isHovering, setIsHovering] = useState(parentIsHovering);
   const [isPlaying, setIsPlaying] = useState(false);
   const [userStarted, setUserStarted] = useState(false);
   const [prevMuted, setPrevMuted] = useState<boolean | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -78,16 +81,16 @@ export default function HoverPlayCard({
       }
     };
 
-    if (isHovering && !userStarted) {
+    if (parentIsHovering && !userStarted) {
       void doPlayMuted();
-    } else if (!isHovering && !userStarted) {
+    } else if (!isHovering && !userStarted && !parentIsHovering) {
       doPause();
     }
 
     return () => {
       ignore = true;
     };
-  }, [isHovering, mutedOnHover, prevMuted, userStarted]);
+  }, [isHovering, parentIsHovering, mutedOnHover, prevMuted, userStarted]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -97,8 +100,13 @@ export default function HoverPlayCard({
       const floored = Math.floor(video.currentTime);
       setCurrentTime((prev) => (prev !== floored ? floored : prev));
     };
+    const updateDuration = () => {
+      setDuration(video.duration || 0);
+    };
 
     video.addEventListener('timeupdate', updateCurrentTime);
+    video.addEventListener('loadedmetadata', updateDuration);
+    video.addEventListener('durationchange', updateDuration);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onEnded = () => {
@@ -112,6 +120,8 @@ export default function HoverPlayCard({
 
     return () => {
       video.removeEventListener('timeupdate', updateCurrentTime);
+      video.removeEventListener('loadedmetadata', updateDuration);
+      video.removeEventListener('durationchange', updateDuration);
       video.removeEventListener('play', onPlay);
       video.removeEventListener('pause', onPause);
       video.removeEventListener('ended', onEnded);
@@ -154,9 +164,7 @@ export default function HoverPlayCard({
   };
 
   //get video total duration
-  const videoDuration = videoRef.current?.duration
-    ? formatDuration(videoRef.current.duration)
-    : 'Preview';
+  const videoDuration = duration ? formatDuration(duration) : 'Preview';
 
   const showOverlay =
     showCenterControl &&
@@ -165,7 +173,7 @@ export default function HoverPlayCard({
   return (
     <div
       className={cn(
-        'group relative h-full overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-sm',
+        'group relative h-full overflow-hidden   ',
         onOpen &&
           'cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70',
         className
@@ -207,7 +215,7 @@ export default function HoverPlayCard({
                   event.stopPropagation();
                   void handleIconClick();
                 }}
-                className="pointer-events-auto h-16 w-16 rounded-full bg-black/25 text-white hover:bg-black/45"
+                className="pointer-events-none h-16 w-16 rounded-full bg-black/25 text-white hover:bg-black/45"
                 aria-label={isPlaying ? 'Pause video' : 'Play video'}
               >
                 {isPlaying && !keepPlayIconWhilePlaying ? (
